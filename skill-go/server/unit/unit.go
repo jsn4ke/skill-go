@@ -24,10 +24,37 @@ type Unit struct {
 	Alive     bool
 	Position  Position
 
-	// State management (Phase 1)
-	UnitStates spelldef.UnitState // bitfield of control effects
-	CurrentForm uint32         // current shapeshift form (0 = none)
-	MountID     uint32         // current mount/vehicle (0 = none)
+	// State management
+	UnitStates  spelldef.UnitState // bitfield of control effects
+	CurrentForm uint32             // current shapeshift form (0 = none)
+	MountID     uint32             // current mount/vehicle (0 = none)
+
+	// Identity
+	Level  uint8
+	TeamID uint32
+
+	// Defense
+	Armor       int32
+	Resistances [spelldef.SchoolMax]float64
+
+	// Base attributes
+	Str, Agi, Sta, Int, Spi int32
+
+	// Combat statistics
+	AttackPower int32
+	SpellPower  int32
+	CritMelee   float64 // 0–100%
+	CritSpell   float64 // 0–100%
+	HitMelee    float64 // 0–100%
+	HitSpell    float64 // 0–100%
+	Dodge       float64 // 0–100%
+	Parry       float64 // 0–100%
+	Block       float64 // 0–100%
+	BlockValue  int32
+
+	// Weapon
+	MinWeaponDamage int32
+	MaxWeaponDamage int32
 }
 
 // Position is a simple 3D coordinate.
@@ -35,7 +62,7 @@ type Position struct {
 	X, Y, Z float64
 }
 
-// NewUnit creates a unit with the given parameters.
+// NewUnit creates a unit with the given parameters. New fields default to zero.
 func NewUnit(guid uint64, name string, health, mana int32) *Unit {
 	return &Unit{
 		GUID:      guid,
@@ -45,7 +72,16 @@ func NewUnit(guid uint64, name string, health, mana int32) *Unit {
 		Mana:      mana,
 		MaxMana:   mana,
 		Alive:     true,
+		Level:     1,
 	}
+}
+
+// NewUnitWithStats creates a unit with level and team specified.
+func NewUnitWithStats(guid uint64, name string, health, mana int32, level uint8, teamID uint32) *Unit {
+	u := NewUnit(guid, name, health, mana)
+	u.Level = level
+	u.TeamID = teamID
+	return u
 }
 
 // IsAlive returns true if the unit has positive health.
@@ -126,6 +162,113 @@ func (u *Unit) RemoveUnitState(state spelldef.UnitState) {
 // IsMounted returns true if the unit is on a mount or vehicle.
 func (u *Unit) IsMounted() bool {
 	return u.MountID != 0
+}
+
+// --- Stat modification ---
+
+// ModifyStat adjusts a combat stat by the given amount.
+// For percentage stats (Crit/Dodge/Parry/Block/Hit), amount is treated as
+// a percentage value (e.g. +5 means +5%).
+func (u *Unit) ModifyStat(stat StatType, amount int32) {
+	switch stat {
+	case StatStrength:
+		u.Str += amount
+	case StatAgility:
+		u.Agi += amount
+	case StatStamina:
+		u.Sta += amount
+	case StatIntellect:
+		u.Int += amount
+	case StatSpirit:
+		u.Spi += amount
+	case StatAttackPower:
+		u.AttackPower += amount
+	case StatSpellPower:
+		u.SpellPower += amount
+	case StatArmor:
+		u.Armor += amount
+	case StatCritMelee:
+		u.CritMelee += float64(amount)
+	case StatCritSpell:
+		u.CritSpell += float64(amount)
+	case StatHitMelee:
+		u.HitMelee += float64(amount)
+	case StatHitSpell:
+		u.HitSpell += float64(amount)
+	case StatDodge:
+		u.Dodge += float64(amount)
+	case StatParry:
+		u.Parry += float64(amount)
+	case StatBlock:
+		u.Block += float64(amount)
+	case StatBlockValue:
+		u.BlockValue += amount
+	}
+}
+
+// --- Armor ---
+
+// SetArmor sets the unit's armor value.
+func (u *Unit) SetArmor(amount int32) {
+	u.Armor = amount
+}
+
+// --- Resistances ---
+
+// SetResistance sets the resistance for a specific school.
+func (u *Unit) SetResistance(school spelldef.SchoolMask, value float64) {
+	idx := schoolIndex(school)
+	u.Resistances[idx] = value
+}
+
+// GetResistance returns the resistance for a specific school.
+func (u *Unit) GetResistance(school spelldef.SchoolMask) float64 {
+	idx := schoolIndex(school)
+	return u.Resistances[idx]
+}
+
+// schoolIndex maps a single-bit SchoolMask to an array index (0–6).
+func schoolIndex(school spelldef.SchoolMask) int {
+	switch school {
+	case spelldef.SchoolMaskFire:
+		return 0
+	case spelldef.SchoolMaskFrost:
+		return 1
+	case spelldef.SchoolMaskArcane:
+		return 2
+	case spelldef.SchoolMaskNature:
+		return 3
+	case spelldef.SchoolMaskShadow:
+		return 4
+	case spelldef.SchoolMaskHoly:
+		return 5
+	case spelldef.SchoolMaskPhysical:
+		return 6
+	default:
+		return 0
+	}
+}
+
+// --- Level ---
+
+// SetLevel sets the unit's level.
+func (u *Unit) SetLevel(level uint8) {
+	u.Level = level
+}
+
+// --- Faction ---
+
+// IsFriendly returns true if both units share the same TeamID.
+func (u *Unit) IsFriendly(other *Unit) bool {
+	return u.TeamID == other.TeamID
+}
+
+// --- Weapon ---
+
+// SetWeaponDamage sets the weapon damage range.
+func (u *Unit) SetWeaponDamage(minDmg, maxDmg int32) {
+	u.MinWeaponDamage = minDmg
+	u.MaxWeaponDamage = maxDmg
 }
 
 // String returns a debug representation.

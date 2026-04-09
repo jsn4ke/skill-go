@@ -210,8 +210,10 @@ func (m *AuraManager) checkProcForEffect(aura *Aura, eff *AuraEffect, event Proc
 func applyEffect(eff *AuraEffect, target *unit.Unit) {
 	switch eff.AuraType {
 	case AuraTypeBuff:
-		// Stat modifier placeholder
-		_ = eff.BaseAmount
+		// Check if this is a stat modifier (MiscValue maps to StatType)
+		if statType := unit.StatType(eff.MiscValue); isValidStatType(statType) {
+			target.ModifyStat(statType, eff.BaseAmount)
+		}
 	case AuraTypeDebuff:
 		// Apply control effect
 		applyControlEffect(eff, target)
@@ -222,9 +224,19 @@ func applyEffect(eff *AuraEffect, target *unit.Unit) {
 
 func removeEffect(eff *AuraEffect, target *unit.Unit) {
 	switch eff.AuraType {
+	case AuraTypeBuff:
+		// Reverse stat modifier
+		if statType := unit.StatType(eff.MiscValue); isValidStatType(statType) {
+			target.ModifyStat(statType, -eff.BaseAmount)
+		}
 	case AuraTypeDebuff:
 		removeControlEffect(eff, target)
 	}
+}
+
+// isValidStatType returns true if the value is a valid StatType.
+func isValidStatType(s unit.StatType) bool {
+	return s >= unit.StatStrength && s <= unit.StatBlockValue
 }
 
 func applyControlEffect(eff *AuraEffect, target *unit.Unit) {

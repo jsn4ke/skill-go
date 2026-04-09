@@ -1,6 +1,7 @@
 package effect
 
 import (
+	"skill-go/server/combat"
 	"skill-go/server/spelldef"
 	"skill-go/server/trace"
 	"skill-go/server/unit"
@@ -74,13 +75,35 @@ func handleSchoolDamageLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
 }
 
 func handleSchoolDamageHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
-	damage := eff.BasePoints
+	caster := ctx.Caster()
+	t := ctx.GetTrace()
+
+	// Phase 1: hit resolution
+	result := combat.ResolveSpellHit(caster, target, eff.SchoolMask, t)
+
+	if result == spelldef.CombatResultMiss || result == spelldef.CombatResultFullResist {
+		t.Event(trace.SpanEffectHit, "school_damage_miss", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+			"target": target.Name,
+			"result": result,
+		})
+		return
+	}
+
+	// Phase 2: damage calculation
+	damage := combat.CalcSpellDamage(eff.BasePoints, caster.SpellPower, eff.Coef, caster, target, eff.SchoolMask, t)
+
+	// Crit multiplier for spells
+	if result == spelldef.CombatResultCrit {
+		damage = int32(float64(damage) * 1.5)
+	}
+
 	target.TakeDamage(damage)
-	ctx.GetTrace().Event(trace.SpanEffectHit, "school_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"target": target.Name,
-		"damage": damage,
-		"school": eff.SchoolMask,
-		"hp":     target.Health,
+	t.Event(trace.SpanEffectHit, "school_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target":  target.Name,
+		"damage":  damage,
+		"school":  eff.SchoolMask,
+		"result":  result,
+		"hp":      target.Health,
 	})
 }
 

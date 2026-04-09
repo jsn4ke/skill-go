@@ -19,6 +19,7 @@ const (
 	SpanProc         = "proc"
 	SpanTargeting    = "targeting"
 	SpanScript       = "script"
+	SpanCombat       = "combat"
 )
 
 // FlowEvent represents a single event in the spell flow trace.

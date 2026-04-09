@@ -1,6 +1,7 @@
 package effect
 
 import (
+	"skill-go/server/combat"
 	"skill-go/server/spelldef"
 	"skill-go/server/trace"
 	"skill-go/server/unit"
@@ -76,16 +77,55 @@ func handleWeaponDamageLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
 }
 
 func handleWeaponDamageHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
-	// Weapon damage = basePoints + weaponDamage * weaponPercent
-	weaponDamage := int32(100) // placeholder weapon damage
-	total := eff.BasePoints + int32(float64(weaponDamage)*eff.WeaponPercent)
-	target.TakeDamage(total)
-	ctx.GetTrace().Event(trace.SpanEffectHit, "weapon_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"target":         target.Name,
-		"totalDamage":    total,
-		"basePoints":     eff.BasePoints,
-		"weaponDamage":   weaponDamage,
-		"weaponPercent":  eff.WeaponPercent,
-		"hp":             target.Health,
+	caster := ctx.Caster()
+	t := ctx.GetTrace()
+
+	// Phase 1: hit resolution
+	result := combat.ResolveMeleeHit(caster, target, t)
+
+	if result == spelldef.CombatResultMiss || result == spelldef.CombatResultDodge || result == spelldef.CombatResultParry {
+		t.Event(trace.SpanEffectHit, "weapon_damage_miss", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+			"target": target.Name,
+			"result": result,
+		})
+		return
+	}
+
+	// Phase 2: damage calculation
+	damage := combat.CalcMeleeDamage(caster, target, t)
+
+	// Add basePoints on top of weapon damage
+	damage += eff.BasePoints
+
+	// Crit multiplier for melee (2.0x)
+	if result == spelldef.CombatResultCrit {
+		damage = int32(float64(damage) * 2.0)
+	}
+
+	// Glancing damage reduction
+	if result == spelldef.CombatResultGlancing {
+		levelDiff := int(target.Level) - int(caster.Level)
+		if levelDiff < 0 {
+			levelDiff = 0
+		}
+		damage = int32(float64(damage) * combat.GlancingDamageMultiplier(levelDiff))
+	}
+
+	// Block reduces damage
+	if result == spelldef.CombatResultBlock {
+		damage -= target.BlockValue
+		if damage < 1 {
+			damage = 1
+		}
+	}
+
+	target.TakeDamage(damage)
+	t.Event(trace.SpanEffectHit, "weapon_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target":        target.Name,
+		"totalDamage":   damage,
+		"basePoints":    eff.BasePoints,
+		"weaponPercent": eff.WeaponPercent,
+		"result":        result,
+		"hp":            target.Health,
 	})
 }

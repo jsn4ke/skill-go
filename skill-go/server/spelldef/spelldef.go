@@ -4,13 +4,16 @@ package spelldef
 type SchoolMask uint32
 
 const (
-	SchoolMaskNone   SchoolMask = 0
-	SchoolMaskFire    SchoolMask = 1 << 0
-	SchoolMaskFrost   SchoolMask = 1 << 1
-	SchoolMaskArcane  SchoolMask = 1 << 2
-	SchoolMaskNature  SchoolMask = 1 << 3
-	SchoolMaskShadow  SchoolMask = 1 << 4
-	SchoolMaskHoly    SchoolMask = 1 << 5
+	SchoolMax = 7 // number of magic schools (indices 0–6)
+
+	SchoolMaskNone     SchoolMask = 0
+	SchoolMaskFire     SchoolMask = 1 << 0
+	SchoolMaskFrost    SchoolMask = 1 << 1
+	SchoolMaskArcane   SchoolMask = 1 << 2
+	SchoolMaskNature   SchoolMask = 1 << 3
+	SchoolMaskShadow   SchoolMask = 1 << 4
+	SchoolMaskHoly     SchoolMask = 1 << 5
+	SchoolMaskPhysical SchoolMask = 1 << 6
 )
 
 // SpellEffectType enumerates all possible effect types.
@@ -156,6 +159,21 @@ const (
 	CastErrNoCharges       CastError = 13
 	CastErrOnGCD           CastError = 14
 	CastErrInterrupted     CastError = 15
+)
+
+// CombatResult represents the outcome of a hit resolution roll.
+type CombatResult int
+
+const (
+	CombatResultHit        CombatResult = iota // normal hit
+	CombatResultMiss                            // attack missed
+	CombatResultCrit                            // critical strike
+	CombatResultDodge                           // target dodged
+	CombatResultParry                           // target parried
+	CombatResultBlock                           // target blocked (damage reduced)
+	CombatResultGlancing                        // glancing blow (reduced damage)
+	CombatResultResist                          // partial resist
+	CombatResultFullResist                      // fully resisted
 )
 
 // CastResultWithCode pairs a CastResult with a specific error reason.
