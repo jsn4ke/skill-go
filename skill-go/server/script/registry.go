@@ -1,7 +1,6 @@
 package script
 
 import (
-	"log"
 	"sync"
 )
 
@@ -28,7 +27,6 @@ func (r *Registry) RegisterSpellScript(spellID uint32, setup SpellSetupFunc) {
 	ss := NewSpellScript()
 	setup(ss)
 	r.spellScripts[spellID] = ss
-	log.Printf("[ScriptRegistry] registered spell script for spell %d (%d hooks)", spellID, len(ss.hooks))
 }
 
 // RegisterAuraScript registers an aura script setup function for a spell ID.
@@ -39,7 +37,6 @@ func (r *Registry) RegisterAuraScript(spellID uint32, setup AuraSetupFunc) {
 	as := NewAuraScript()
 	setup(as)
 	r.auraScripts[spellID] = as
-	log.Printf("[ScriptRegistry] registered aura script for spell %d (%d hooks)", spellID, len(as.hooks))
 }
 
 // GetSpellScript returns the spell script for a spell ID, or nil.

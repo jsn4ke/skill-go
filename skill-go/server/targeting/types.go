@@ -13,7 +13,24 @@ const (
 	SelectArea                           // all units in an area
 	SelectCone                           // units in a cone
 	SelectChain                          // chain bounce between targets
+	SelectLine                           // line (rectangle) in front of caster
+	SelectTrajectory                     // parabolic trajectory between two points
 )
+
+func (c SelectCategory) String() string {
+	switch c {
+	case SelectSelf: return "Self"
+	case SelectSingle: return "Single"
+	case SelectFriendly: return "Friendly"
+	case SelectEnemy: return "Enemy"
+	case SelectArea: return "Area"
+	case SelectCone: return "Cone"
+	case SelectChain: return "Chain"
+	case SelectLine: return "Line"
+	case SelectTrajectory: return "Trajectory"
+	default: return "Unknown"
+	}
+}
 
 // ReferenceFrame describes the origin point for target selection.
 type ReferenceFrame int
@@ -51,6 +68,8 @@ type Direction struct {
 	Forward   bool    // use caster facing direction
 	ConeAngle float64 // cone half-angle in radians
 	Radius    float64 // selection radius in yards
+	Length    float64 // line/trajectory length in yards
+	Width     float64 // line/trajectory width in yards
 }
 
 // TargetDescriptor is the 5-dimension orthogonal description of target selection.

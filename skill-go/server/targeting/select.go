@@ -1,9 +1,9 @@
 package targeting
 
 import (
-	"log"
 	"math"
 
+	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
 
@@ -15,7 +15,7 @@ type UnitProvider interface {
 
 // Select executes the full target selection pipeline:
 // algorithm → validation filter → script interception → final result.
-func Select(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
+func Select(ctx *SelectionContext, world UnitProvider, t *trace.Trace, spellID uint32, spellName string) []*unit.Unit {
 	var candidates []*unit.Unit
 
 	switch ctx.Descriptor.Category {
@@ -45,6 +45,11 @@ func Select(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
 
 	case SelectChain:
 		candidates = selectChain(ctx, world)
+	case SelectLine:
+		candidates = selectLine(ctx, world)
+
+	case SelectTrajectory:
+		candidates = selectTrajectory(ctx, world)
 	}
 
 	// Apply validation filter
@@ -55,6 +60,13 @@ func Select(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
 		for _, f := range filters {
 			candidates = f(candidates)
 		}
+	}
+
+	if t != nil {
+		t.Event(trace.SpanTargeting, "selected", spellID, spellName, map[string]interface{}{
+			"category":    ctx.Descriptor.Category.String(),
+			"count":       len(candidates),
+		})
 	}
 
 	return candidates
@@ -194,9 +206,95 @@ func selectChain(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
 
 		visited[nearest.GUID] = true
 		result = append(result, nearest)
-		log.Printf("[Chain] bounce #%d → %s (dist=%.1f)", i, nearest.Name, nearestDist)
 	}
 
+	return result
+}
+
+// selectLine selects units in a rectangular area in front of the caster.
+func selectLine(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
+	origin := getOrigin(ctx)
+	length := ctx.Descriptor.Dir.Length
+	if length <= 0 {
+		length = 20
+	}
+	halfWidth := ctx.Descriptor.Dir.Width / 2.0
+	if halfWidth <= 0 {
+		halfWidth = 3
+	}
+
+	// Assume facing +Y
+	facingX, facingY := 0.0, 1.0
+	normalX, normalY := -facingY, facingX
+
+	var result []*unit.Unit
+	for _, u := range world.GetAllUnits() {
+		if u.GUID == ctx.Caster.GUID {
+			continue
+		}
+		dx := u.Position.X - origin.X
+		dy := u.Position.Y - origin.Y
+		along := dx*facingX + dy*facingY
+		perp := dx*normalX + dy*normalY
+
+		if along >= 0 && along <= length && perp >= -halfWidth && perp <= halfWidth {
+			result = append(result, u)
+		}
+	}
+	return result
+}
+
+// selectTrajectory selects units near the line between start and end points.
+func selectTrajectory(ctx *SelectionContext, world UnitProvider) []*unit.Unit {
+	var start, end unit.Position
+	switch ctx.Descriptor.Reference {
+	case RefTarget:
+		start = ctx.Caster.Position
+		if len(ctx.ExplicitTargets) > 0 {
+			end = ctx.ExplicitTargets[0].Position
+		} else {
+			end = start
+		}
+	case RefPosition:
+		start = ctx.Caster.Position
+		end = ctx.OriginPos
+	default:
+		start = ctx.Caster.Position
+		if len(ctx.ExplicitTargets) > 0 {
+			end = ctx.ExplicitTargets[0].Position
+		} else {
+			end = start
+		}
+	}
+
+	halfWidth := ctx.Descriptor.Dir.Width / 2.0
+	if halfWidth <= 0 {
+		halfWidth = 3
+	}
+
+	lineLen := distance(start, end)
+	if lineLen == 0 {
+		return nil
+	}
+
+	dirX := (end.X - start.X) / lineLen
+	dirY := (end.Y - start.Y) / lineLen
+	normalX, normalY := -dirY, dirX
+
+	var result []*unit.Unit
+	for _, u := range world.GetAllUnits() {
+		if u.GUID == ctx.Caster.GUID {
+			continue
+		}
+		dx := u.Position.X - start.X
+		dy := u.Position.Y - start.Y
+		along := dx*dirX + dy*dirY
+		perp := dx*normalX + dy*normalY
+
+		if along >= 0 && along <= lineLen && perp >= -halfWidth && perp <= halfWidth {
+			result = append(result, u)
+		}
+	}
 	return result
 }
 

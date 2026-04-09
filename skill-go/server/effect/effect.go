@@ -1,9 +1,8 @@
 package effect
 
 import (
-	"log"
-
 	"skill-go/server/spelldef"
+	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
 
@@ -11,6 +10,9 @@ import (
 type CasterInfo interface {
 	Caster() *unit.Unit
 	Targets() []*unit.Unit
+	GetTrace() *trace.Trace
+	GetSpellID() uint32
+	GetSpellName() string
 }
 
 // LaunchHandler is called during the Launch phase of an effect.
@@ -65,23 +67,35 @@ func RegisterDefaults(store *Store) {
 }
 
 func handleSchoolDamageLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
-	log.Printf("  [Launch] SchoolDamage: base=%d school=%d", eff.BasePoints, eff.SchoolMask)
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "school_damage_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"base":   eff.BasePoints,
+		"school": eff.SchoolMask,
+	})
 }
 
 func handleSchoolDamageHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
 	damage := eff.BasePoints
-	log.Printf("  [Hit] SchoolDamage → %s: %d damage (school=%d)", target.Name, damage, eff.SchoolMask)
 	target.TakeDamage(damage)
-	log.Printf("  [Hit] %s health: %d/%d (alive=%v)", target.Name, target.Health, target.MaxHealth, target.Alive)
+	ctx.GetTrace().Event(trace.SpanEffectHit, "school_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target": target.Name,
+		"damage": damage,
+		"school": eff.SchoolMask,
+		"hp":     target.Health,
+	})
 }
 
 func handleHealLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
-	log.Printf("  [Launch] Heal: base=%d", eff.BasePoints)
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "heal_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"base": eff.BasePoints,
+	})
 }
 
 func handleHealHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
 	healAmount := eff.BasePoints
-	log.Printf("  [Hit] Heal → %s: %d healing", target.Name, healAmount)
 	target.Heal(healAmount)
-	log.Printf("  [Hit] %s health: %d/%d", target.Name, target.Health, target.MaxHealth)
+	ctx.GetTrace().Event(trace.SpanEffectHit, "heal_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target": target.Name,
+		"amount": healAmount,
+		"hp":     target.Health,
+	})
 }

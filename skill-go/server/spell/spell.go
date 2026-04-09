@@ -2,13 +2,14 @@ package spell
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"skill-go/server/aura"
 	"skill-go/server/effect"
 	"skill-go/server/script"
 	"skill-go/server/spelldef"
+	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
 
@@ -65,11 +66,18 @@ type SpellContext struct {
 	EffectStore  *effect.Store
 	LastCastErr  spelldef.CastError // last validation error
 
+	// Flow tracing
+	Trace *trace.Trace
+
 	// Cast time modifier chain
 	CastModifiers ModifierChain
 
 	// Spell history provider for cooldown/charge/GCD checks
 	HistoryProvider SpellHistoryProvider
+
+	// Cooldown/Aura providers for auto-integration
+	CooldownProvider CooldownProvider
+	AuraProvider     AuraProvider
 
 	// Script support
 	ScriptRegistry *script.Registry
@@ -99,23 +107,33 @@ func New(id uint32, info *spelldef.SpellInfo, caster *unit.Unit, targets []*unit
 		Targets:     targets,
 		State:       StateNone,
 		EffectStore: effect.NewStore(),
+		Trace:       trace.NewTrace(),
 	}
 }
 
 // Prepare performs the validation chain, consumes resources, and transitions to Preparing.
 func (s *SpellContext) Prepare() spelldef.CastResult {
-	log.Printf("[%s] prepare() — state: %s", s.Info.Name, s.State)
+	spellID, spellName := s.Info.ID, s.Info.Name
+	s.Trace.Event(trace.SpanSpell, "prepare", spellID, spellName, map[string]interface{}{
+		"state": s.State.String(),
+		"targetCount": len(s.Targets),
+	})
 
 	if !s.Caster.IsAlive() {
-		log.Printf("[%s] prepare FAILED: caster is dead", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+			"reason": "caster_dead",
+		})
 		s.LastCastErr = spelldef.CastErrDead
 		s.State = StateFinished
 		return spelldef.CastResultFailed
 	}
 
 	// Full validation chain
-	if err := CheckCast(s.Info, s.Caster, s.Targets, s.HistoryProvider); err != spelldef.CastErrNone {
-		log.Printf("[%s] prepare FAILED: CheckCast error %d", s.Info.Name, err)
+	if err := CheckCast(s.Info, s.Caster, s.Targets, s.HistoryProvider, s.Trace); err != spelldef.CastErrNone {
+		s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+			"reason":     "checkcast",
+			"error_code": int(err),
+		})
 		s.LastCastErr = err
 		s.State = StateFinished
 		return spelldef.CastResultFailed
@@ -127,7 +145,9 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 			ss.ClearPrevented()
 			ss.Fire(script.HookOnCheckCast, s.Info)
 			if ss.IsPrevented(script.HookOnCheckCast) {
-				log.Printf("[%s] prepare FAILED: script prevented cast", s.Info.Name)
+				s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+					"reason": "script_prevented",
+				})
 				s.LastCastErr = spelldef.CastErrInterrupted
 				s.State = StateFinished
 				return spelldef.CastResultFailed
@@ -137,14 +157,20 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 
 	if s.Info.PowerCost > 0 {
 		if !s.Caster.ConsumeMana(s.Info.PowerCost) {
-			log.Printf("[%s] prepare FAILED: not enough mana (need %d, have %d)",
-				s.Info.Name, s.Info.PowerCost, s.Caster.Mana)
+			s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+				"reason":     "no_mana",
+				"need":       s.Info.PowerCost,
+				"have":       s.Caster.Mana + s.Info.PowerCost,
+			})
 			s.LastCastErr = spelldef.CastErrNoMana
 			s.State = StateFinished
 			return spelldef.CastResultFailed
 		}
 		s.ManaPaid = true
-		log.Printf("[%s] consumed %d mana → %d remaining", s.Info.Name, s.Info.PowerCost, s.Caster.Mana)
+		s.Trace.Event(trace.SpanSpell, "mana_consumed", spellID, spellName, map[string]interface{}{
+			"amount":    s.Info.PowerCost,
+			"remaining": s.Caster.Mana,
+		})
 	}
 
 	// Apply cast time modifier chain
@@ -153,7 +179,10 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 	if len(s.CastModifiers) > 0 {
 		finalCastTime = s.CastModifiers.Apply(baseCastTime)
 		if finalCastTime != baseCastTime {
-			log.Printf("[%s] cast time modified: %dms → %dms", s.Info.Name, baseCastTime, finalCastTime)
+			s.Trace.Event(trace.SpanSpell, "cast_time_modified", spellID, spellName, map[string]interface{}{
+				"base_ms":  baseCastTime,
+				"final_ms": finalCastTime,
+			})
 		}
 	}
 
@@ -161,7 +190,11 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 	s.CastStart = time.Now()
 	s.State = StatePreparing
 
-	log.Printf("[%s] state → Preparing (cast time: %v)", s.Info.Name, s.CastDuration)
+	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+		"from": "None",
+		"to":   "Preparing",
+		"castTime_ms": finalCastTime,
+	})
 
 	if s.CastDuration == 0 {
 		return s.Cast()
@@ -172,18 +205,25 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 
 // Cast performs re-validation, launches effects, then routes to immediate/delay/channel/empower path.
 func (s *SpellContext) Cast() spelldef.CastResult {
-	log.Printf("[%s] cast() — state: %s", s.Info.Name, s.State)
+	spellID, spellName := s.Info.ID, s.Info.Name
+	s.Trace.Event(trace.SpanSpell, "cast", spellID, spellName, map[string]interface{}{
+		"state": s.State.String(),
+	})
 
 	if !s.Caster.IsAlive() {
-		log.Printf("[%s] cast FAILED: caster died during cast", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "cast_failed", spellID, spellName, map[string]interface{}{
+			"reason": "caster_died_during_cast",
+		})
 		s.refundMana()
 		s.State = StateFinished
 		return spelldef.CastResultFailed
 	}
 
 	// Re-check range at launch time
-	if !ReCheckRange(s.Info, s.Caster, s.Targets) {
-		log.Printf("[%s] cast FAILED: target out of range at launch", s.Info.Name)
+	if !ReCheckRange(s.Info, s.Caster, s.Targets, s.Trace) {
+		s.Trace.Event(trace.SpanSpell, "cast_failed", spellID, spellName, map[string]interface{}{
+			"reason": "target_out_of_range_at_launch",
+		})
 		s.refundMana()
 		s.LastCastErr = spelldef.CastErrOutOfRange
 		s.State = StateFinished
@@ -192,7 +232,10 @@ func (s *SpellContext) Cast() spelldef.CastResult {
 
 	for _, t := range s.Targets {
 		if !t.IsAlive() {
-			log.Printf("[%s] cast FAILED: target %s died during cast", s.Info.Name, t.Name)
+			s.Trace.Event(trace.SpanSpell, "cast_failed", spellID, spellName, map[string]interface{}{
+				"reason":      "target_died_during_cast",
+				"target_name": t.Name,
+			})
 			s.refundMana()
 			s.State = StateFinished
 			return spelldef.CastResultFailed
@@ -200,10 +243,38 @@ func (s *SpellContext) Cast() spelldef.CastResult {
 	}
 
 	s.State = StateLaunched
-	log.Printf("[%s] state → Launched", s.Info.Name)
+	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+		"from": "Preparing",
+		"to":   "Launched",
+	})
+
+	// Auto-trigger cooldowns
+	if s.CooldownProvider != nil {
+		if tcp, ok := s.CooldownProvider.(TracingCooldownProvider); ok {
+			if s.Info.MaxCharges > 0 {
+				tcp.TraceConsumeCharge(s.ID, s.Trace)
+			}
+			if s.Info.RecoveryTime > 0 {
+				tcp.TraceAddCooldown(s.ID, s.Info.RecoveryTime, s.Info.RecoveryCategory, s.Trace)
+			}
+			if s.Info.CategoryRecoveryTime > 0 {
+				tcp.TraceStartGCD(s.Info.RecoveryCategory, s.Info.CategoryRecoveryTime, s.Trace)
+			}
+		} else {
+			if s.Info.MaxCharges > 0 {
+				s.CooldownProvider.ConsumeCharge(s.ID)
+			}
+			if s.Info.RecoveryTime > 0 {
+				s.CooldownProvider.AddCooldown(s.ID, s.Info.RecoveryTime, s.Info.RecoveryCategory)
+			}
+			if s.Info.CategoryRecoveryTime > 0 {
+				s.CooldownProvider.StartGCD(s.Info.RecoveryCategory, s.Info.CategoryRecoveryTime)
+			}
+		}
+	}
 
 	// Launch phase
-	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets}
+	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: spellID, spellName: spellName}
 
 	// Script hook: BeforeCast
 	if s.ScriptRegistry != nil {
@@ -216,7 +287,10 @@ func (s *SpellContext) Cast() spelldef.CastResult {
 	for _, eff := range s.Info.Effects {
 		handler := s.EffectStore.GetLaunchHandler(eff.EffectType)
 		if handler != nil {
-			log.Printf("[%s] launch — effect[%d] type=%d", s.Info.Name, eff.EffectIndex, eff.EffectType)
+			s.Trace.Event(trace.SpanEffectLaunch, "launch", spellID, spellName, map[string]interface{}{
+				"effectIndex": eff.EffectIndex,
+				"effectType":  int(eff.EffectType),
+			})
 			handler(ctx, eff)
 		}
 	}
@@ -245,43 +319,66 @@ func (s *SpellContext) Cast() spelldef.CastResult {
 
 // Cancel interrupts the spell from Preparing, Channeling, or Empower state.
 func (s *SpellContext) Cancel() {
-	log.Printf("[%s] cancel() — state: %s", s.Info.Name, s.State)
+	spellID, spellName := s.Info.ID, s.Info.Name
+	s.Trace.Event(trace.SpanSpell, "cancel", spellID, spellName, map[string]interface{}{
+		"state": s.State.String(),
+	})
 
 	switch s.State {
 	case StatePreparing:
 		s.Cancelled = true
 		s.refundMana()
 		s.State = StateFinished
-		log.Printf("[%s] state → Finished (cancelled from Preparing)", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+			"from":   "Preparing",
+			"to":     "Finished",
+			"reason": "cancelled",
+		})
 
 	case StateChanneling:
 		s.Cancelled = true
 		s.stopChannel()
 		s.State = StateFinished
-		log.Printf("[%s] state → Finished (cancelled from Channeling)", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+			"from":   "Channeling",
+			"to":     "Finished",
+			"reason": "cancelled",
+		})
 
 	case StateLaunched:
 		// Cancel pending delayed hits
 		s.Cancelled = true
 		s.delayedHits = nil
 		s.State = StateFinished
-		log.Printf("[%s] state → Finished (cancelled from Launched)", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+			"from":   "Launched",
+			"to":     "Finished",
+			"reason": "cancelled",
+		})
 
 	default:
-		log.Printf("[%s] cancel ignored: not in cancellable state", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "cancel_ignored", spellID, spellName, map[string]interface{}{
+			"state": s.State.String(),
+		})
 	}
 }
 
 // Finish handles post-cast cleanup.
 func (s *SpellContext) Finish() spelldef.CastResult {
-	log.Printf("[%s] finish() — state: %s", s.Info.Name, s.State)
+	spellID, spellName := s.Info.ID, s.Info.Name
 
 	if s.Info.IsAutoRepeat && !s.Cancelled {
 		s.State = StateIdle
-		log.Printf("[%s] state → Idle (auto-repeat)", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+			"from": s.State.String(),
+			"to":   "Idle",
+			"reason": "auto_repeat",
+		})
 	} else {
 		s.State = StateFinished
-		log.Printf("[%s] state → Finished (spell complete)", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "finish", spellID, spellName, map[string]interface{}{
+			"cancelled": s.Cancelled,
+		})
 	}
 
 	return spelldef.CastResultSuccess
@@ -290,7 +387,11 @@ func (s *SpellContext) Finish() spelldef.CastResult {
 // --- Delayed execution path ---
 
 func (s *SpellContext) startDelayedHit() spelldef.CastResult {
-	log.Printf("[%s] delayed hit path — %d ms delay, %d targets", s.Info.Name, s.Info.DelayMs, len(s.Targets))
+	spellID, spellName := s.Info.ID, s.Info.Name
+	s.Trace.Event(trace.SpanSpell, "delayed_hit_path", spellID, spellName, map[string]interface{}{
+		"delay_ms":    s.Info.DelayMs,
+		"targetCount": len(s.Targets),
+	})
 
 	now := time.Now()
 	delay := time.Duration(s.Info.DelayMs) * time.Millisecond
@@ -310,50 +411,66 @@ func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 				if remaining > 0 {
 					time.Sleep(remaining)
 				}
-				log.Printf("[%s] delayed hit arrived — target=%s, effect[%d]", s.Info.Name, d.target.Name, d.eff.EffectIndex)
+				s.Trace.Event(trace.SpanSpell, "delayed_hit_arrived", spellID, spellName, map[string]interface{}{
+					"target":      d.target.Name,
+					"effectIndex": d.eff.EffectIndex,
+				})
 				s.executeHit(d)
 				s.pendingHits.Done()
 			}(dh)
 		}
 	}
 
-	// Launch phase is done, but we don't finish yet — wait for delayed hits
-	// For demo: we return success and caller can call WaitDelayedHits()
-	log.Printf("[%s] state → Launched (waiting for %d delayed hits)", s.Info.Name, len(s.delayedHits))
+	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+		"from":         "Launched",
+		"to":           "Launched",
+		"pending_hits": len(s.delayedHits),
+	})
 	return spelldef.CastResultSuccess
 }
 
 // WaitDelayedHits blocks until all delayed hits have been processed.
 func (s *SpellContext) WaitDelayedHits() {
 	s.pendingHits.Wait()
-	log.Printf("[%s] all delayed hits processed", s.Info.Name)
+	s.Trace.Event(trace.SpanSpell, "all_delayed_hits_processed", s.Info.ID, s.Info.Name, nil)
 	s.Finish()
 }
 
 // executeHit runs the Hit phase for a single delayed hit entry.
 func (s *SpellContext) executeHit(d delayedHit) {
 	if s.Cancelled || !d.target.IsAlive() {
-		log.Printf("[%s] delayed hit skipped (cancelled=%v, target alive=%v)", s.Info.Name, s.Cancelled, d.target.IsAlive())
+		s.Trace.Event(trace.SpanSpell, "delayed_hit_skipped", s.Info.ID, s.Info.Name, map[string]interface{}{
+			"cancelled":  s.Cancelled,
+			"targetAlive": d.target.IsAlive(),
+		})
 		return
 	}
-	ctx := &effectAdapter{caster: s.Caster, targets: []*unit.Unit{d.target}}
+	ctx := &effectAdapter{caster: s.Caster, targets: []*unit.Unit{d.target}, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
 	handler := s.EffectStore.GetHitHandler(d.eff.EffectType)
 	if handler != nil {
-		log.Printf("[%s] hit — effect[%d] type=%d → %s", s.Info.Name, d.eff.EffectIndex, d.eff.EffectType, d.target.Name)
+		s.Trace.Event(trace.SpanEffectHit, "hit", s.Info.ID, s.Info.Name, map[string]interface{}{
+			"effectIndex": d.eff.EffectIndex,
+			"effectType":  int(d.eff.EffectType),
+			"target":      d.target.Name,
+		})
 		handler(ctx, d.eff, d.target)
 	}
+	s.triggerHitProc(d.target)
 }
 
 // executeHitAll runs the Hit phase for all effects on all targets (immediate path).
 func (s *SpellContext) executeHitAll() {
-	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets}
+	spellID, spellName := s.Info.ID, s.Info.Name
+	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: spellID, spellName: spellName}
 	for _, eff := range s.Info.Effects {
 		// Script hook: OnEffectHit (per effect)
 		if s.ScriptRegistry != nil {
 			if ss := s.ScriptRegistry.GetSpellScript(s.ID); ss != nil {
 				ss.Fire(script.HookOnEffectHit, &eff)
 				if ss.IsPrevented(script.HookOnEffectHit) {
-					log.Printf("[%s] effect[%d] hit prevented by script", s.Info.Name, eff.EffectIndex)
+					s.Trace.Event(trace.SpanScript, "effect_prevented", spellID, spellName, map[string]interface{}{
+						"effectIndex": eff.EffectIndex,
+					})
 					continue
 				}
 			}
@@ -362,7 +479,11 @@ func (s *SpellContext) executeHitAll() {
 		handler := s.EffectStore.GetHitHandler(eff.EffectType)
 		if handler != nil {
 			for _, target := range s.Targets {
-				log.Printf("[%s] hit — effect[%d] type=%d → %s", s.Info.Name, eff.EffectIndex, eff.EffectType, target.Name)
+				s.Trace.Event(trace.SpanEffectHit, "hit", spellID, spellName, map[string]interface{}{
+					"effectIndex": eff.EffectIndex,
+					"effectType":  int(eff.EffectType),
+					"target":      target.Name,
+				})
 				handler(ctx, eff, target)
 
 				// Script hook: OnHit (per target)
@@ -371,6 +492,9 @@ func (s *SpellContext) executeHitAll() {
 						ss.Fire(script.HookOnHit, target)
 					}
 				}
+
+				// Auto-trigger proc on target
+				s.triggerHitProc(target)
 			}
 		}
 	}
@@ -390,7 +514,12 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 
 	s.channelTicker = time.NewTicker(interval)
 	s.State = StateChanneling
-	log.Printf("[%s] state → Channeling (duration=%v, interval=%v)", s.Info.Name, duration, interval)
+	s.Trace.Event(trace.SpanSpell, "state_change", s.Info.ID, s.Info.Name, map[string]interface{}{
+		"from":     "Launched",
+		"to":       "Channeling",
+		"duration": duration.String(),
+		"interval": interval.String(),
+	})
 
 	tickCount := 0
 
@@ -410,42 +539,63 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 					return
 				}
 				tickCount++
-				log.Printf("[%s] channel tick #%d", s.Info.Name, tickCount)
+				s.Trace.Event(trace.SpanSpell, "channel_tick", s.Info.ID, s.Info.Name, map[string]interface{}{
+					"tick": tickCount,
+				})
 
-					// Check all targets still alive — stop channel if all dead
-					allDead := true
-					for _, target := range s.Targets {
-						if target.IsAlive() {
-							allDead = false
-							break
-						}
+				// Check all targets still alive — stop channel if all dead
+				allDead := true
+				for _, target := range s.Targets {
+					if target.IsAlive() {
+						allDead = false
+						break
 					}
-					if allDead {
-						log.Printf("[%s] all targets dead, stopping channel", s.Info.Name)
-						return
-					}
+				}
+				if allDead {
+					s.Trace.Event(trace.SpanSpell, "channel_stopped", s.Info.ID, s.Info.Name, map[string]interface{}{
+						"reason":     "all_targets_dead",
+						"total_ticks": tickCount,
+					})
+					return
+				}
 
-				ctx := &effectAdapter{caster: s.Caster, targets: s.Targets}
+				ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
 				for _, eff := range s.Info.Effects {
 					handler := s.EffectStore.GetHitHandler(eff.EffectType)
 					if handler != nil {
 						for _, target := range s.Targets {
 							if target.IsAlive() {
-								log.Printf("[%s] hit — effect[%d] type=%d → %s",
-									s.Info.Name, eff.EffectIndex, eff.EffectType, target.Name)
+								s.Trace.Event(trace.SpanEffectHit, "hit", s.Info.ID, s.Info.Name, map[string]interface{}{
+									"effectIndex": eff.EffectIndex,
+									"effectType":  int(eff.EffectType),
+									"target":      target.Name,
+									"channelTick": tickCount,
+								})
 								handler(ctx, eff, target)
 							}
 						}
 					}
 				}
 
+				// Script hook: OnChannelTick
+				if s.ScriptRegistry != nil {
+					if ss := s.ScriptRegistry.GetSpellScript(s.ID); ss != nil {
+						ss.Fire(script.HookOnChannelTick, s)
+					}
+				}
+
 			case <-timer.C:
-				log.Printf("[%s] channel duration elapsed (%d ticks)", s.Info.Name, tickCount)
+				s.Trace.Event(trace.SpanSpell, "channel_elapsed", s.Info.ID, s.Info.Name, map[string]interface{}{
+					"total_ticks": tickCount,
+				})
 				s.State = StateFinished
 				return
 
 			case <-s.channelStop:
-				log.Printf("[%s] channel stopped (%d ticks)", s.Info.Name, tickCount)
+				s.Trace.Event(trace.SpanSpell, "channel_stopped", s.Info.ID, s.Info.Name, map[string]interface{}{
+					"reason":      "cancelled",
+					"total_ticks": tickCount,
+				})
 				s.State = StateFinished
 				return
 			}
@@ -465,7 +615,7 @@ func (s *SpellContext) stopChannel() {
 func (s *SpellContext) WaitChannel() {
 	if s.channelDone != nil {
 		<-s.channelDone
-		log.Printf("[%s] channel finished", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "channel_finished", s.Info.ID, s.Info.Name, nil)
 	}
 }
 
@@ -484,7 +634,12 @@ func (s *SpellContext) startEmpower() spelldef.CastResult {
 	s.empowerActive = true
 	s.empowerReleased = false
 	s.State = StatePreparing
-	log.Printf("[%s] state → Preparing (empower, stages=%d)", s.Info.Name, len(s.Info.EmpowerStages))
+	s.Trace.Event(trace.SpanSpell, "state_change", s.Info.ID, s.Info.Name, map[string]interface{}{
+		"from":   "Launched",
+		"to":     "Preparing",
+		"reason": "empower",
+		"stages": len(s.Info.EmpowerStages),
+	})
 
 	return spelldef.CastResultSuccess
 }
@@ -507,8 +662,11 @@ func (s *SpellContext) UpdateEmpower(elapsed time.Duration) (stage int, changed 
 
 	changed = s.empowerStage != oldStage
 	if changed {
-		log.Printf("[%s] empower stage changed: %d → %d (elapsed=%v)",
-			s.Info.Name, oldStage, s.empowerStage, elapsed.Round(time.Millisecond))
+		s.Trace.Event(trace.SpanSpell, "empower_stage_changed", s.Info.ID, s.Info.Name, map[string]interface{}{
+			"from":    oldStage,
+			"to":      s.empowerStage,
+			"elapsed": elapsed.Round(time.Millisecond).String(),
+		})
 	}
 
 	return s.empowerStage, changed
@@ -517,15 +675,20 @@ func (s *SpellContext) UpdateEmpower(elapsed time.Duration) (stage int, changed 
 // ReleaseEmpower releases the empower at the current stage, applying the empower multiplier.
 // Returns the cast result.
 func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
+	spellID, spellName := s.Info.ID, s.Info.Name
+
 	if !s.empowerActive {
-		log.Printf("[%s] release ignored: not empowering", s.Info.Name)
+		s.Trace.Event(trace.SpanSpell, "empower_release_ignored", spellID, spellName, nil)
 		return spelldef.CastResultFailed
 	}
 
 	elapsed := time.Since(s.empowerStart)
 	if elapsed < time.Duration(s.Info.EmpowerMinTime)*time.Millisecond {
-		log.Printf("[%s] release FAILED: below min empower time (elapsed=%v, min=%vms)",
-			s.Info.Name, elapsed.Round(time.Millisecond), s.Info.EmpowerMinTime)
+		s.Trace.Event(trace.SpanSpell, "empower_release_failed", spellID, spellName, map[string]interface{}{
+			"reason":  "below_min_time",
+			"elapsed": elapsed.Round(time.Millisecond).String(),
+			"min":     s.Info.EmpowerMinTime,
+		})
 		return spelldef.CastResultFailed
 	}
 
@@ -534,7 +697,10 @@ func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
 	s.Cancelled = false
 
 	stage := s.empowerStage
-	log.Printf("[%s] empower released at stage %d (elapsed=%v)", s.Info.Name, stage, elapsed.Round(time.Millisecond))
+	s.Trace.Event(trace.SpanSpell, "empower_released", spellID, spellName, map[string]interface{}{
+		"stage":   stage,
+		"elapsed": elapsed.Round(time.Millisecond).String(),
+	})
 
 	// Apply empower multiplier to effects
 	empoweredInfo := *s.Info
@@ -554,13 +720,21 @@ func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
 
 	// Transition to Launched and execute
 	s.State = StateLaunched
-	log.Printf("[%s] state → Launched (empower multiplier: %.1fx)", s.Info.Name, multiplier)
+	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
+		"from":       "Preparing",
+		"to":         "Launched",
+		"reason":     "empower_release",
+		"multiplier": fmt.Sprintf("%.1fx", multiplier),
+	})
 
-	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets}
+	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: spellID, spellName: spellName}
 	for _, eff := range s.Info.Effects {
 		handler := s.EffectStore.GetLaunchHandler(eff.EffectType)
 		if handler != nil {
-			log.Printf("[%s] launch — effect[%d] type=%d", s.Info.Name, eff.EffectIndex, eff.EffectType)
+			s.Trace.Event(trace.SpanEffectLaunch, "launch", spellID, spellName, map[string]interface{}{
+				"effectIndex": eff.EffectIndex,
+				"effectType":  int(eff.EffectType),
+			})
 			handler(ctx, eff)
 		}
 	}
@@ -575,25 +749,54 @@ func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
 
 // --- Helpers ---
 
+// triggerHitProc checks for proc auras on the target and triggers them.
+func (s *SpellContext) triggerHitProc(target *unit.Unit) {
+	if s.AuraProvider == nil {
+		return
+	}
+	mgr := s.AuraProvider.GetAuraManager(target)
+	if mgr == nil {
+		return
+	}
+	results := mgr.CheckProc(aura.ProcEventOnHit, s.Trace, s.Info.ID, s.Info.Name)
+	for _, r := range results {
+		if r.Triggered {
+			s.Trace.Event(trace.SpanProc, "triggered", s.Info.ID, s.Info.Name, map[string]interface{}{
+				"target":    target.Name,
+				"auraSpell": r.Aura.SpellID,
+			})
+		}
+	}
+}
+
 func (s *SpellContext) refundMana() {
 	if s.ManaPaid && s.Info.PowerCost > 0 {
 		s.Caster.Mana += s.Info.PowerCost
 		if s.Caster.Mana > s.Caster.MaxMana {
 			s.Caster.Mana = s.Caster.MaxMana
 		}
-		log.Printf("[%s] refunded %d mana → %d", s.Info.Name, s.Info.PowerCost, s.Caster.Mana)
+		s.Trace.Event(trace.SpanSpell, "mana_refunded", s.Info.ID, s.Info.Name, map[string]interface{}{
+			"amount":    s.Info.PowerCost,
+			"remaining": s.Caster.Mana,
+		})
 		s.ManaPaid = false
 	}
 }
 
 // effectAdapter wraps SpellContext to satisfy effect.CasterInfo.
 type effectAdapter struct {
-	caster  *unit.Unit
-	targets []*unit.Unit
+	caster    *unit.Unit
+	targets   []*unit.Unit
+	trace     *trace.Trace
+	spellID   uint32
+	spellName string
 }
 
-func (a *effectAdapter) Caster() *unit.Unit  { return a.caster }
-func (a *effectAdapter) Targets() []*unit.Unit { return a.targets }
+func (a *effectAdapter) Caster() *unit.Unit             { return a.caster }
+func (a *effectAdapter) Targets() []*unit.Unit           { return a.targets }
+func (a *effectAdapter) GetTrace() *trace.Trace          { return a.trace }
+func (a *effectAdapter) GetSpellID() uint32              { return a.spellID }
+func (a *effectAdapter) GetSpellName() string            { return a.spellName }
 
 // String returns a debug representation.
 func (s *SpellContext) String() string {

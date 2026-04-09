@@ -1,8 +1,9 @@
 package script
 
 import (
-	"log"
 	"sync"
+
+	"skill-go/server/trace"
 )
 
 // Handler is a type-erased callback function.
@@ -13,6 +14,9 @@ type ScriptContext struct {
 	hooks    map[string][]Handler
 	mu       sync.Mutex
 	prevented map[string]bool // which hooks have been prevented
+	trace    *trace.Trace     // optional trace for logging
+	spellID  uint32
+	spellName string
 }
 
 // NewScriptContext creates an empty ScriptContext.
@@ -21,6 +25,13 @@ func NewScriptContext() *ScriptContext {
 		hooks:     make(map[string][]Handler),
 		prevented: make(map[string]bool),
 	}
+}
+
+// SetTrace sets the trace for this script context.
+func (sc *ScriptContext) SetTrace(t *trace.Trace, spellID uint32, spellName string) {
+	sc.trace = t
+	sc.spellID = spellID
+	sc.spellName = spellName
 }
 
 // Register adds a handler for a hook name.
@@ -45,7 +56,13 @@ func (sc *ScriptContext) Fire(hookName string, arg interface{}) bool {
 		h(arg)
 	}
 
-	log.Printf("[Script] fired hook %s (%d handlers)", hookName, len(handlers))
+	if sc.trace != nil {
+		sc.trace.Event(trace.SpanScript, "hook_fired", sc.spellID, sc.spellName, map[string]interface{}{
+			"hook":        hookName,
+			"handlerCount": len(handlers),
+		})
+	}
+
 	return true
 }
 

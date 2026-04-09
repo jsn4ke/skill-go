@@ -1,11 +1,11 @@
 package aura
 
 import (
-	"log"
 	"math/rand"
 	"time"
 
 	"skill-go/server/spelldef"
+	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
 
@@ -24,27 +24,38 @@ func NewAuraManager(owner *unit.Unit) *AuraManager {
 }
 
 // ApplyAura applies an aura to the target unit.
-func (m *AuraManager) ApplyAura(aura *Aura) {
+func (m *AuraManager) ApplyAura(aura *Aura, t *trace.Trace, spellID uint32, spellName string) {
 	existing, ok := m.Auras[aura.SpellID]
 
 	if ok && existing.CasterGUID == aura.CasterGUID {
 		// Same caster, same aura → refresh duration or stack
 		if existing.MaxStack > 1 && existing.StackAmount < existing.MaxStack {
 			existing.StackAmount++
-			log.Printf("[Aura] %s: stacked %s to %d", m.Owner.Name, aura.SpellID, existing.StackAmount)
 		} else {
-			log.Printf("[Aura] %s: refreshed %s duration", m.Owner.Name, aura.SpellID)
+			t.Event(trace.SpanAura, "refreshed", spellID, spellName, map[string]interface{}{
+				"target":  m.Owner.Name,
+				"auraID":  aura.SpellID,
+			})
+			existing.Duration = aura.Duration
+			return
 		}
-		// Refresh duration
+		t.Event(trace.SpanAura, "stacked", spellID, spellName, map[string]interface{}{
+			"target":      m.Owner.Name,
+			"auraID":      aura.SpellID,
+			"stacks":      existing.StackAmount,
+		})
 		existing.Duration = aura.Duration
 		return
 	}
 
 	if ok && existing.CasterGUID != aura.CasterGUID {
-		// Different caster → remove old, apply new (mutual exclusion)
-		log.Printf("[Aura] %s: replacing %s (old caster %d, new caster %d)",
-			m.Owner.Name, aura.SpellID, existing.CasterGUID, aura.CasterGUID)
-		m.RemoveAura(existing, RemoveModeDefault)
+		t.Event(trace.SpanAura, "replacing", spellID, spellName, map[string]interface{}{
+			"target":       m.Owner.Name,
+			"auraID":       aura.SpellID,
+			"oldCaster":    existing.CasterGUID,
+			"newCaster":    aura.CasterGUID,
+		})
+		m.RemoveAura(existing, RemoveModeDefault, t, spellID, spellName)
 	}
 
 	// Create application
@@ -63,12 +74,17 @@ func (m *AuraManager) ApplyAura(aura *Aura) {
 		applyEffect(eff, m.Owner)
 	}
 
-	log.Printf("[Aura] %s: applied %s (type=%d, duration=%dms, stacks=%d)",
-		m.Owner.Name, aura.SpellID, aura.AuraType, aura.Duration, aura.StackAmount)
+	t.Event(trace.SpanAura, "applied", spellID, spellName, map[string]interface{}{
+		"target":   m.Owner.Name,
+		"auraID":   aura.SpellID,
+		"auraType": aura.AuraType,
+		"duration": aura.Duration,
+		"stacks":   aura.StackAmount,
+	})
 }
 
 // RemoveAura removes an aura from the target.
-func (m *AuraManager) RemoveAura(aura *Aura, mode RemoveMode) {
+func (m *AuraManager) RemoveAura(aura *Aura, mode RemoveMode, t *trace.Trace, spellID uint32, spellName string) {
 	app := findApplication(aura, m.Owner)
 	if app == nil {
 		return
@@ -82,7 +98,11 @@ func (m *AuraManager) RemoveAura(aura *Aura, mode RemoveMode) {
 	}
 
 	delete(m.Auras, aura.SpellID)
-	log.Printf("[Aura] %s: removed %s (mode=%d)", m.Owner.Name, aura.SpellID, mode)
+	t.Event(trace.SpanAura, "removed", spellID, spellName, map[string]interface{}{
+		"target":  m.Owner.Name,
+		"auraID":  aura.SpellID,
+		"mode":    mode,
+	})
 }
 
 // HasAura checks if the unit has a specific aura.
@@ -117,12 +137,12 @@ type ProcCheckResult struct {
 }
 
 // CheckProc runs the full proc pipeline: prepare → identify → determine → post-process.
-func (m *AuraManager) CheckProc(event ProcEvent) []*ProcCheckResult {
+func (m *AuraManager) CheckProc(event ProcEvent, t *trace.Trace, spellID uint32, spellName string) []*ProcCheckResult {
 	var results []*ProcCheckResult
 
 	for _, aura := range m.Auras {
 		for _, eff := range aura.Effects {
-			result := m.checkProcForEffect(aura, eff, event)
+			result := m.checkProcForEffect(aura, eff, event, t, spellID, spellName)
 			if result != nil {
 				results = append(results, result)
 			}
@@ -132,7 +152,7 @@ func (m *AuraManager) CheckProc(event ProcEvent) []*ProcCheckResult {
 	return results
 }
 
-func (m *AuraManager) checkProcForEffect(aura *Aura, eff *AuraEffect, event ProcEvent) *ProcCheckResult {
+func (m *AuraManager) checkProcForEffect(aura *Aura, eff *AuraEffect, event ProcEvent, t *trace.Trace, spellID uint32, spellName string) *ProcCheckResult {
 	if aura.ProcCharges > 0 && aura.RemainingProcs <= 0 {
 		return nil
 	}
@@ -167,11 +187,17 @@ func (m *AuraManager) checkProcForEffect(aura *Aura, eff *AuraEffect, event Proc
 	if aura.ProcCharges > 0 {
 		aura.RemainingProcs--
 		if aura.RemainingProcs <= 0 {
-			m.RemoveAura(aura, RemoveModeExpired)
+			m.RemoveAura(aura, RemoveModeExpired, t, spellID, spellName)
 		}
 	}
 
-	log.Printf("[Proc] %s: aura %d procced on event %d", m.Owner.Name, aura.SpellID, event)
+	t.Event(trace.SpanProc, "check", spellID, spellName, map[string]interface{}{
+		"target":     m.Owner.Name,
+		"auraID":     aura.SpellID,
+		"procEvent":  int(event),
+		"remaining":  aura.RemainingProcs,
+	})
+
 	return &ProcCheckResult{
 		Triggered: true,
 		Aura:      aura,

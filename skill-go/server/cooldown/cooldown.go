@@ -1,10 +1,10 @@
 package cooldown
 
 import (
-	"log"
 	"time"
 
 	"skill-go/server/spelldef"
+	"skill-go/server/trace"
 )
 
 // --- Record types ---
@@ -67,7 +67,6 @@ func (h *SpellHistory) AddCooldown(spellID uint32, durationMs int32, category in
 		Duration:  time.Duration(durationMs) * time.Millisecond,
 		Category:  category,
 	}
-	log.Printf("[Cooldown] added spell %d: %dms, category=%d", spellID, durationMs, category)
 }
 
 // GetCooldownRemaining returns the remaining cooldown time for a spell (0 if ready).
@@ -93,7 +92,6 @@ func (h *SpellHistory) InitCharges(spellID uint32, maxCharges int32, recoveryMs 
 		CurrentCharges:  maxCharges,
 		RecoveryDuration: time.Duration(recoveryMs) * time.Millisecond,
 	}
-	log.Printf("[Charges] initialized spell %d: %d charges, recovery=%dms", spellID, maxCharges, recoveryMs)
 }
 
 // ConsumeCharge consumes one charge of a spell. Returns false if no charges available.
@@ -108,7 +106,6 @@ func (h *SpellHistory) ConsumeCharge(spellID uint32) bool {
 	}
 
 	rec.CurrentCharges--
-	log.Printf("[Charges] consumed spell %d: %d charges remaining", spellID, rec.CurrentCharges)
 
 	// If not at max, queue a recovery
 	if int32(len(rec.RecoveryQueue)) < (rec.MaxCharges - rec.CurrentCharges) {
@@ -120,7 +117,6 @@ func (h *SpellHistory) ConsumeCharge(spellID uint32) bool {
 		}
 		endTime := startTime.Add(rec.RecoveryDuration)
 		rec.RecoveryQueue = append(rec.RecoveryQueue, endTime)
-		log.Printf("[Charges] spell %d: recovery queued, ready at %v", spellID, endTime)
 	}
 
 	return true
@@ -144,7 +140,6 @@ func (h *SpellHistory) StartGCD(category int32, durationMs int32) {
 		StartTime: time.Now(),
 		Duration:  time.Duration(durationMs) * time.Millisecond,
 	}
-	log.Printf("[GCD] started category=%d: %dms", category, durationMs)
 }
 
 // IsOnGCD checks if a recovery category is on GCD.
@@ -169,7 +164,6 @@ func (h *SpellHistory) AddSchoolLockout(schoolMask spelldef.SchoolMask, duration
 		SchoolMask: schoolMask,
 		ExpireTime: time.Now().Add(time.Duration(durationMs) * time.Millisecond),
 	})
-	log.Printf("[Lockout] added school=%d: %dms", schoolMask, durationMs)
 }
 
 // IsSchoolLocked checks if any school in the mask is locked.
@@ -203,12 +197,11 @@ func (h *SpellHistory) Update() {
 	}
 
 	// Process charge recoveries
-	for id, rec := range h.charges {
+	for _, rec := range h.charges {
 		for len(rec.RecoveryQueue) > 0 && now.After(rec.RecoveryQueue[0]) {
 			rec.RecoveryQueue = rec.RecoveryQueue[1:]
 			if rec.CurrentCharges < rec.MaxCharges {
 				rec.CurrentCharges++
-				log.Printf("[Charges] spell %d: charge recovered, now %d", id, rec.CurrentCharges)
 			}
 		}
 	}
@@ -305,5 +298,32 @@ func (h *SpellHistory) IsReady(spellID uint32, schoolMask spelldef.SchoolMask) b
 // OnHold applies an extra cooldown when interrupted.
 func (h *SpellHistory) OnHold(spellID uint32, durationMs int32) {
 	h.AddCooldown(spellID, durationMs, 0)
-	log.Printf("[OnHold] spell %d: added %dms hold cooldown", spellID, durationMs)
+}
+
+// TraceAddCooldown records a cooldown event to trace.
+func (h *SpellHistory) TraceAddCooldown(spellID uint32, durationMs int32, category int32, t *trace.Trace) {
+	h.AddCooldown(spellID, durationMs, category)
+	t.Event(trace.SpanCooldown, "add_cooldown", spellID, "", map[string]interface{}{
+		"duration_ms": durationMs,
+		"category":    category,
+	})
+}
+
+// TraceConsumeCharge records a charge consumption event to trace.
+func (h *SpellHistory) TraceConsumeCharge(spellID uint32, t *trace.Trace) bool {
+	ok := h.ConsumeCharge(spellID)
+	t.Event(trace.SpanCooldown, "consume_charge", spellID, "", map[string]interface{}{
+		"success": ok,
+		"remaining": h.GetChargeRemaining(spellID),
+	})
+	return ok
+}
+
+// TraceStartGCD records a GCD event to trace.
+func (h *SpellHistory) TraceStartGCD(category int32, durationMs int32, t *trace.Trace) {
+	h.StartGCD(category, durationMs)
+	t.Event(trace.SpanCooldown, "start_gcd", 0, "", map[string]interface{}{
+		"category":    category,
+		"duration_ms": durationMs,
+	})
 }

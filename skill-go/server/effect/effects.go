@@ -1,9 +1,8 @@
 package effect
 
 import (
-	"log"
-
 	"skill-go/server/spelldef"
+	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
 
@@ -17,6 +16,11 @@ type TriggerSpellHandler func(caster *unit.Unit, spellID uint32, targets []*unit
 func RegisterExtended(store *Store, auraHandler AuraHandler, triggerHandler TriggerSpellHandler) {
 	if auraHandler != nil {
 		store.RegisterHit(spelldef.SpellEffectApplyAura, func(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
+			ctx.GetTrace().Event(trace.SpanEffectHit, "apply_aura", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+				"target":    target.Name,
+				"auraType":  eff.AuraType,
+				"duration":  eff.AuraDuration,
+			})
 			auraHandler(ctx, eff, target)
 		})
 	}
@@ -31,12 +35,17 @@ func RegisterExtended(store *Store, auraHandler AuraHandler, triggerHandler Trig
 }
 
 func handleTriggerSpellLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
-	log.Printf("  [Launch] TriggerSpell: triggerSpellID=%d", eff.TriggerSpellID)
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "trigger_spell_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"triggerSpellID": eff.TriggerSpellID,
+	})
 }
 
 func makeTriggerSpellHit(fn TriggerSpellHandler) HitHandler {
 	return func(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
-		log.Printf("  [Hit] TriggerSpell → %s: triggering spell %d", target.Name, eff.TriggerSpellID)
+		ctx.GetTrace().Event(trace.SpanEffectHit, "trigger_spell_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+			"target":         target.Name,
+			"triggerSpellID": eff.TriggerSpellID,
+		})
 		if eff.TriggerSpellID != 0 {
 			fn(ctx.Caster(), eff.TriggerSpellID, []*unit.Unit{target})
 		}
@@ -44,25 +53,39 @@ func makeTriggerSpellHit(fn TriggerSpellHandler) HitHandler {
 }
 
 func handleEnergizeLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
-	log.Printf("  [Launch] Energize: amount=%d powerType=%d", eff.EnergizeAmount, eff.EnergizeType)
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "energize_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"amount":    eff.EnergizeAmount,
+		"powerType": eff.EnergizeType,
+	})
 }
 
 func handleEnergizeHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
-	log.Printf("  [Hit] Energize → %s: restoring %d mana", target.Name, eff.EnergizeAmount)
 	target.RestoreMana(eff.EnergizeAmount)
-	log.Printf("  [Hit] %s mana: %d/%d", target.Name, target.Mana, target.MaxMana)
+	ctx.GetTrace().Event(trace.SpanEffectHit, "energize_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target": target.Name,
+		"amount": eff.EnergizeAmount,
+		"mana":   target.Mana,
+	})
 }
 
 func handleWeaponDamageLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
-	log.Printf("  [Launch] WeaponDamage: basePoints=%d weaponPercent=%.1f", eff.BasePoints, eff.WeaponPercent)
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "weapon_damage_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"basePoints":    eff.BasePoints,
+		"weaponPercent": eff.WeaponPercent,
+	})
 }
 
 func handleWeaponDamageHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
 	// Weapon damage = basePoints + weaponDamage * weaponPercent
 	weaponDamage := int32(100) // placeholder weapon damage
 	total := eff.BasePoints + int32(float64(weaponDamage)*eff.WeaponPercent)
-	log.Printf("  [Hit] WeaponDamage → %s: %d total damage (base=%d + weapon=%d * %.1f)",
-		target.Name, total, eff.BasePoints, weaponDamage, eff.WeaponPercent)
 	target.TakeDamage(total)
-	log.Printf("  [Hit] %s health: %d/%d (alive=%v)", target.Name, target.Health, target.MaxHealth, target.Alive)
+	ctx.GetTrace().Event(trace.SpanEffectHit, "weapon_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"target":         target.Name,
+		"totalDamage":    total,
+		"basePoints":     eff.BasePoints,
+		"weaponDamage":   weaponDamage,
+		"weaponPercent":  eff.WeaponPercent,
+		"hp":             target.Health,
+	})
 }

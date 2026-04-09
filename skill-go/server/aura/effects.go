@@ -93,7 +93,7 @@ func (pe *PeriodicEffect) Start() {
 		}
 	}()
 
-	log.Printf("[Periodic] started %s on %s (interval=%v, damage=%v)",
+	log.Printf("[Periodic] started %d on %s (interval=%v, damage=%v)",
 		pe.Aura.SpellID, pe.Target.Name, interval, pe.IsDamage)
 }
 
@@ -108,11 +108,11 @@ func (pe *PeriodicEffect) tick() {
 	amount := pe.Effect.BaseAmount
 	if pe.IsDamage {
 		pe.Target.TakeDamage(amount)
-		log.Printf("[Periodic] %s: damage tick %d → %s (HP: %d/%d)",
+		log.Printf("[Periodic] %d: damage tick %d → %s (HP: %d/%d)",
 			pe.Aura.SpellID, amount, pe.Target.Name, pe.Target.Health, pe.Target.MaxHealth)
 	} else {
 		pe.Target.Heal(amount)
-		log.Printf("[Periodic] %s: heal tick %d → %s (HP: %d/%d)",
+		log.Printf("[Periodic] %d: heal tick %d → %s (HP: %d/%d)",
 			pe.Aura.SpellID, amount, pe.Target.Name, pe.Target.Health, pe.Target.MaxHealth)
 	}
 }
