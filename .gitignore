@@ -1,0 +1,11 @@
+# Build artifacts
+skill-go/server/server.exe
+skill-go/client/client.exe
+
+# OpenSpec (managed by TrinityCore repo)
+skill-go/openspec/
+
+# IDE
+.idea/
+.vscode/
+*.swp
