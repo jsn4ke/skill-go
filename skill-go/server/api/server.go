@@ -1377,9 +1377,38 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 // NewServer creates and returns a configured HTTP server.
+func handleApiIndex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	routes := []map[string]string{
+		{"method": "GET",  "path": "/api",               "description": "List all API routes (this endpoint)"},
+		{"method": "POST", "path": "/api/cast",           "description": "Cast a spell (prepare phase for cast-time spells)"},
+		{"method": "POST", "path": "/api/cast/complete",  "description": "Complete a pending cast"},
+		{"method": "POST", "path": "/api/cast/cancel",    "description": "Cancel a pending cast"},
+		{"method": "GET",  "path": "/api/units",          "description": "List all units with stats and auras"},
+		{"method": "POST", "path": "/api/units/add",      "description": "Spawn a new unit"},
+		{"method": "PUT",  "path": "/api/units/update",   "description": "Update a unit (e.g. level change)"},
+		{"method": "POST", "path": "/api/units/move",     "description": "Move a unit to new position"},
+		{"method": "DELETE","path": "/api/units/{guid}",  "description": "Remove a unit"},
+		{"method": "GET",  "path": "/api/trace",          "description": "Get trace events for last cast"},
+		{"method": "GET",  "path": "/api/trace/stream",   "description": "SSE stream of trace events"},
+		{"method": "GET",  "path": "/api/trace/history",  "description": "Get full trace history"},
+		{"method": "GET",  "path": "/api/spells",         "description": "List all spells"},
+		{"method": "POST", "path": "/api/spells",         "description": "Create a new spell"},
+		{"method": "GET",  "path": "/api/spells/{id}",    "description": "Get spell details"},
+		{"method": "PUT",  "path": "/api/spells/{id}",    "description": "Update a spell"},
+		{"method": "DELETE","path": "/api/spells/{id}",    "description": "Delete a spell"},
+		{"method": "POST", "path": "/api/reset",           "description": "Reset session (restore units, clear cooldowns/auras)"},
+	}
+	writeJSON(w, http.StatusOK, routes)
+}
+
 func NewServer(addr string, gs *GameState) *http.Server {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/api", handleApiIndex)
 	mux.HandleFunc("/api/cast", handleCast(gs))
 	mux.HandleFunc("/api/cast/complete", handleCastComplete(gs))
 	mux.HandleFunc("/api/cast/cancel", handleCastCancel(gs))
