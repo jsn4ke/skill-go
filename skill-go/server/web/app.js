@@ -516,10 +516,9 @@ function renderActionBar(spells) {
 
   for (const sp of spells) {
     const btn = document.createElement('button');
-    btn.className = 'spell-btn' + (sp.id !== 1001 ? ' greyed' : '');
+    btn.className = 'spell-btn';
     btn.id = `spell-btn-${sp.id}`;
     btn.title = `${sp.name} (${sp.schoolName})`;
-    if (sp.id !== 1001) btn.disabled = true;
 
     // Spell icon
     const iconWrap = document.createElement('div');
@@ -533,7 +532,6 @@ function renderActionBar(spells) {
     btn.appendChild(name);
 
     btn.addEventListener('click', () => {
-      if (sp.id !== 1001) return;
       if (selectedTargetGUID) {
         castSpell(sp.id, selectedTargetGUID);
       } else {
@@ -558,7 +556,7 @@ function startCooldown(spellID, durationMs) {
   if (cooldownTimers[spellID]) clearInterval(cooldownTimers[spellID]);
   cooldownTimers[spellID] = setInterval(() => {
     const remaining = duration - (performance.now() - startTime);
-    if (remaining <= 0) { clearInterval(cooldownTimers[spellID]); delete cooldownTimers[spellID]; btn.disabled = (spellID !== 1001); overlay.remove(); cdText.remove(); return; }
+    if (remaining <= 0) { clearInterval(cooldownTimers[spellID]); delete cooldownTimers[spellID]; btn.disabled = false; overlay.remove(); cdText.remove(); return; }
     overlay.style.setProperty('--cd-pct', ((duration - remaining) / duration * 100) + '%');
     cdText.textContent = Math.ceil(remaining / 1000);
   }, 50);
@@ -566,7 +564,7 @@ function startCooldown(spellID, durationMs) {
 
 function clearAllCooldowns() {
   for (const id in cooldownTimers) { clearInterval(cooldownTimers[id]); delete cooldownTimers[id]; }
-  document.querySelectorAll('.spell-btn').forEach(btn => { if (btn.id !== 'spell-btn-1001') btn.disabled = true; else btn.disabled = false; btn.querySelector('.cd-overlay')?.remove(); btn.querySelector('.cd-text')?.remove(); });
+  document.querySelectorAll('.spell-btn').forEach(btn => { btn.disabled = false; btn.querySelector('.cd-overlay')?.remove(); btn.querySelector('.cd-text')?.remove(); });
 }
 
 // ---- Stats ----

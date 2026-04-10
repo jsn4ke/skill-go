@@ -6,7 +6,8 @@ import (
 
 // Subscriber receives FlowEvents from the StreamHub.
 type Subscriber struct {
-	ch chan FlowEvent
+	ch     chan FlowEvent
+	closed bool
 }
 
 // Events returns the channel for receiving events.
@@ -49,7 +50,10 @@ func (h *StreamHub) Unsubscribe(s *Subscriber) {
 	h.mu.Lock()
 	delete(h.subscribers, s)
 	h.mu.Unlock()
-	close(s.ch)
+	if !s.closed {
+		s.closed = true
+		close(s.ch)
+	}
 }
 
 // Publish sends an event to all subscribers and adds it to the ring buffer.
@@ -121,7 +125,10 @@ func (h *StreamHub) Clear() {
 func (h *StreamHub) ClearSubscribers() {
 	h.mu.Lock()
 	for s := range h.subscribers {
-		close(s.ch)
+		if !s.closed {
+			s.closed = true
+			close(s.ch)
+		}
 		delete(h.subscribers, s)
 	}
 	h.mu.Unlock()

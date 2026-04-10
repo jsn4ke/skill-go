@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"math"
 	"strconv"
@@ -216,125 +217,34 @@ func NewGameState(fileSink *trace.FileSink) *GameState {
 }
 
 func (gs *GameState) initSpellBook() {
+	// Authentic WoW 3.3.5a Fireball (Rank 13, spell 42833)
+	//   Cast: 3.5s | No CD | 19% base mana
+	//   Effect #0: SchoolDamage (Fire), base 888 avg (898-1143), coef 1.0
+	//   Effect #1: ApplyAura Debuff, 8s DoT (periodic damage 29/tick every 2s)
+	// Source: spell_mage.cpp:759, spell_bonus_data, Wowhead 42833
 	gs.SpellBook = []*spelldef.SpellInfo{
 		{
-			ID:         1001,
-			Name:       "Fireball",
-			SchoolMask: spelldef.SchoolMaskFire,
-			CastTime:   0,
-			RecoveryTime: 6000,
-			PowerCost:  200,
-			MaxTargets: 1,
+			ID:             42833,
+			Name:           "Fireball",
+			SchoolMask:     spelldef.SchoolMaskFire,
+			RecoveryTime:   0,
+			CastTime:       3500,
+			PowerCost:      400,
+			MaxTargets:     1,
 			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, SchoolMask: spelldef.SchoolMaskFire, BasePoints: 500, Coef: 1.0},
-			},
-		},
-		{
-			ID:         1002,
-			Name:       "Frostbolt",
-			SchoolMask: spelldef.SchoolMaskFrost,
-			CastTime:   0,
-			RecoveryTime: 3000,
-			PowerCost:  150,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, SchoolMask: spelldef.SchoolMaskFrost, BasePoints: 300, Coef: 0.8},
-			},
-		},
-		{
-			ID:         1003,
-			Name:       "Arcane Intellect",
-			SchoolMask: spelldef.SchoolMaskArcane,
-			CastTime:   0,
-			RecoveryTime: 0,
-			PowerCost:  0,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectApplyAura, AuraType: int32(aura.AuraTypeBuff), AuraDuration: 30000},
-			},
-		},
-		{
-			ID:         1004,
-			Name:       "Heal",
-			SchoolMask: spelldef.SchoolMaskHoly,
-			CastTime:   0,
-			RecoveryTime: 2000,
-			PowerCost:  300,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectHeal, BasePoints: 800},
-			},
-		},
-		{
-			ID:         1005,
-			Name:       "Heroic Strike",
-			SchoolMask: spelldef.SchoolMaskPhysical,
-			CastTime:   0,
-			RecoveryTime: 4000,
-			PowerCost: 0,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectWeaponDamage, BasePoints: 50, WeaponPercent: 1.0},
-			},
-		},
-		{
-			ID:         1006,
-			Name:       "Whirlwind",
-			SchoolMask: spelldef.SchoolMaskPhysical,
-			CastTime:   0,
-			RecoveryTime: 10000,
-			PowerCost: 0,
-			MaxTargets: 5,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectWeaponDamage, BasePoints: 80, WeaponPercent: 1.0},
-			},
-		},
-		{
-			ID:         1007,
-			Name:       "Mana Shield",
-			SchoolMask: spelldef.SchoolMaskArcane,
-			CastTime:   0,
-			RecoveryTime: 12000,
-			PowerCost: 500,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectApplyAura, AuraType: int32(aura.AuraTypeBuff), AuraDuration: 60000},
-			},
-		},
-		{
-			ID:         1008,
-			Name:       "Shadow Bolt",
-			SchoolMask: spelldef.SchoolMaskShadow,
-			CastTime:   0,
-			RecoveryTime: 4000,
-			PowerCost:  250,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, SchoolMask: spelldef.SchoolMaskShadow, BasePoints: 400, Coef: 0.9},
-			},
-		},
-		{
-			ID:         1009,
-			Name:       "Innervate",
-			SchoolMask: spelldef.SchoolMaskNature,
-			CastTime:   0,
-			RecoveryTime: 180000,
-			PowerCost:  0,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectEnergize, EnergizeType: spelldef.PowerTypeMana, EnergizeAmount: 500},
-			},
-		},
-		{
-			ID:         1010,
-			Name:       "Nature's Swiftness",
-			SchoolMask: spelldef.SchoolMaskNature,
-			CastTime:   0,
-			RecoveryTime: 180000,
-			PowerCost:  0,
-			MaxTargets: 1,
-			Effects: []spelldef.SpellEffectInfo{
-				{EffectIndex: 0, EffectType: spelldef.SpellEffectTriggerSpell, TriggerSpellID: 1004},
+				{
+					EffectIndex: 0,
+					EffectType:  spelldef.SpellEffectSchoolDamage,
+					SchoolMask:  spelldef.SchoolMaskFire,
+					BasePoints:  888,
+					Coef:        1.0,
+				},
+				{
+					EffectIndex: 1,
+					EffectType:  spelldef.SpellEffectApplyAura,
+					AuraType:    int32(aura.AuraTypeDebuff),
+					AuraDuration: 8000,
+				},
 			},
 		},
 	}
@@ -751,7 +661,6 @@ func handleAddUnit(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
-		defer gs.mu.Unlock()
 
 		_ = gs.addUnit(req.Name, req.Level)
 
@@ -774,7 +683,6 @@ func handleRemoveUnit(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
-		defer gs.mu.Unlock()
 
 		if err := gs.removeUnit(guid); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -840,9 +748,15 @@ func handleUpdateUnit(gs *GameState) http.HandlerFunc {
 // ---------------------------------------------------------------------------
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, `{"error":"marshal failed"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	w.Write(data)
 }
 
 func handleCast(gs *GameState) http.HandlerFunc {
@@ -859,7 +773,6 @@ func handleCast(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
-		defer gs.mu.Unlock()
 
 		spellInfo := gs.FindSpell(req.SpellID)
 		if spellInfo == nil {
@@ -894,8 +807,16 @@ func handleCast(gs *GameState) http.HandlerFunc {
 		ctx.ScriptRegistry = gs.Registry
 		ctx.Trace = castTrace
 
-		// Cast
+		// Prepare (enters casting state, consumes mana)
 		result := ctx.Prepare()
+
+		// If spell has a cast time, wait for it then execute Cast()
+		if result == spelldef.CastResultSuccess && ctx.CastDuration > 0 {
+			gs.mu.Unlock()
+			time.Sleep(ctx.CastDuration)
+			gs.mu.Lock()
+			result = ctx.Cast()
+		}
 
 		// Collect events from this cast
 		castEvents := gs.Recorder.Events()
@@ -925,6 +846,7 @@ func handleCast(gs *GameState) http.HandlerFunc {
 
 		// Clear trace events so next cast only returns fresh events
 		gs.Recorder.Reset()
+		gs.mu.Unlock()
 	}
 }
 
