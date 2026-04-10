@@ -105,7 +105,7 @@ function render() {
           <span class="school-badge ${escAttr(spell.schoolName)}">${escHtml(spell.schoolName)}</span>
         </div>
         <div>
-          <span class="spell-summary">CD: ${spell.cd}ms | Mana: ${spell.powerCost}</span>
+          <span class="spell-summary">CD: ${spell.cooldown}ms | Mana: ${spell.powerCost}</span>
           <button class="btn-delete" data-id="${spell.id}" title="Delete spell">&#10005;</button>
           <span class="spell-toggle">&#9654;</span>
         </div>
@@ -122,7 +122,7 @@ function render() {
         </div>
         <div class="form-row">
           <label>Cooldown</label>
-          <input type="number" class="field-cd" value="${spell.cd}">
+          <input type="number" class="field-cd" value="${spell.cooldown}">
           <span class="unit">ms</span>
         </div>
         <div class="form-row">
