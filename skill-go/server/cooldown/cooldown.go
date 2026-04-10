@@ -69,6 +69,11 @@ func (h *SpellHistory) AddCooldown(spellID uint32, durationMs int32, category in
 	}
 }
 
+// RemoveCooldown removes the cooldown record for a spell.
+func (h *SpellHistory) RemoveCooldown(spellID uint32) {
+	delete(h.cooldowns, spellID)
+}
+
 // GetCooldownRemaining returns the remaining cooldown time for a spell (0 if ready).
 func (h *SpellHistory) GetCooldownRemaining(spellID uint32) time.Duration {
 	rec, ok := h.cooldowns[spellID]

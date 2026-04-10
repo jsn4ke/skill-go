@@ -1068,6 +1068,9 @@ func handleUpdateSpell(gs *GameState) http.HandlerFunc {
 		spell.PowerCost = req.PowerCost
 		spell.MaxTargets = req.MaxTargets
 
+		// Clear existing cooldown so the new RecoveryTime takes effect immediately
+			gs.History.RemoveCooldown(uint32(id))
+
 		// Update effects
 		for _, ue := range req.Effects {
 			if ue.EffectIndex < 0 || ue.EffectIndex >= len(spell.Effects) {
