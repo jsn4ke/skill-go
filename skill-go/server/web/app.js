@@ -16,12 +16,21 @@ let spells = [];
 let spellMap = {};
 const cooldownTimers = {};
 let selectedTargetGUID = null;
+let auraCountdownTimer = null;
 let targetingSpellID = null;
 const CASTER_GUID = 1;
 let spellLogCounter = 0;
 let serverLogCounter = 0;
 const RESULT_CRIT = 2, RESULT_MISS = 1;
 let stats = { casts: 0, damage: 0, healing: 0, crits: 0, misses: 0 };
+
+// Casting state
+let castingState = 'idle'; // 'idle' | 'casting'
+let castingTimer = null;
+let castingStartTime = null;
+let castingDuration = null;
+let castingSpellID = null;
+let castingTargetGUID = null;
 
 // ---- API ----
 async function apiGet(path) {
@@ -186,6 +195,7 @@ function exitTargetingMode() {
 // ---- Selection ----
 function hideTargetUI() {
   selectedTargetGUID = null;
+  if (auraCountdownTimer) { clearInterval(auraCountdownTimer); auraCountdownTimer = null; }
   const ei = document.getElementById('enemy-info');
   if (ei) { ei.hidden = true; ei.style.display = 'none'; ei.classList.add('hidden'); }
   const tl = document.getElementById('target-lock');
@@ -291,58 +301,142 @@ function onCanvasClick(event) {
 
 // ---- Spell Cast ----
 async function castSpell(spellID, targetGUID) {
+  if (castingState === 'casting') return;
+
   try {
     const targetIDs = targetGUID ? [targetGUID] : [];
     const result = await apiPost('/api/cast', { spellID, targetIDs });
-    if (result.units) reconcileUnits(result.units);
 
-    // Handle dead targets FIRST — deselect before updating any UI
-    let targetDied = false;
-    if (result.units) {
-      for (const u of result.units) {
-        if (!u.alive && u.guid !== CASTER_GUID) {
-          if (selectedTargetGUID != null && u.guid == selectedTargetGUID) {
-            targetDied = true;
-            deselectTarget();
-          }
-        }
-      }
-    }
-
-    if (result.result === 'success') {
-      processEvents(result.events || [], characters, CASTER_GUID, targetGUID);
-      updateStats(result.events || []);
-      updateSelfPanel(result.units?.find(u => u.guid == CASTER_GUID));
-      if (!targetDied && targetGUID) {
-        const targetData = result.units?.find(u => u.guid == targetGUID);
-        if (targetData) { updateEnemyInfo(targetData); updateTargetLock(targetData); }
-      }
-      addSpellLogEntry(result.events || [], spellMap[spellID]);
-      addServerLogEntry(result.events || [], spellMap[spellID]);
+    if (result.result === 'preparing') {
+      // Cast-time spell: enter CASTING state
+      enterCastingState(spellID, targetGUID, result.castTimeMs, result.schoolName);
+      // Process prepare events (cast glow)
+      if (result.events) processEvents(result.events, characters, CASTER_GUID, targetGUID);
+    } else if (result.result === 'success') {
+      // Instant spell: process immediately
+      processCastResult(result, spellID, targetGUID);
     } else {
       console.log('Cast failed:', result.error);
     }
+  } catch (err) { console.error('Cast error:', err); }
+}
 
-    // Auto-remove dead units — immediately, no delay
-    if (result.units) {
-      for (const u of result.units) {
-        if (!u.alive && u.guid !== CASTER_GUID) {
-          const group = characters.find(c => c.userData.guid == u.guid);
-          if (group && !group.userData.removed) {
-            group.userData.removed = true;
-            // Remove from dropdown
-            const opt = document.querySelector(`#enemy-select option[value="${u.guid}"]`);
-            if (opt) opt.remove();
-            // Remove from scene immediately
-            clearAuraRings(group);
-            removeCharacter(group);
-            const idx = characters.indexOf(group);
-            if (idx >= 0) characters.splice(idx, 1);
-          }
+function enterCastingState(spellID, targetGUID, castTimeMs, schoolName) {
+  castingState = 'casting';
+  castingSpellID = spellID;
+  castingTargetGUID = targetGUID;
+  castingDuration = castTimeMs;
+  castingStartTime = performance.now();
+
+  // Show cast bar
+  const bar = document.getElementById('cast-bar');
+  bar.classList.remove('hidden');
+  document.getElementById('cast-bar-name').textContent = spellMap[spellID]?.name || 'Spell';
+  document.getElementById('cast-bar-icon').innerHTML = SCHOOL_ICONS[schoolName] || SCHOOL_ICONS.Fire;
+  const fill = document.getElementById('cast-bar-fill');
+  fill.style.width = '0%';
+  fill.style.background = getComputedStyle(document.documentElement).getPropertyValue('--cast-fill-color').trim() || '#ff4400';
+
+  // Disable all spell buttons
+  document.querySelectorAll('.spell-btn').forEach(b => b.disabled = true);
+
+  // Start animation
+  if (castingTimer) cancelAnimationFrame(castingTimer);
+  function animateCastBar() {
+    if (castingState !== 'casting') return;
+    const elapsed = performance.now() - castingStartTime;
+    const pct = Math.min(elapsed / castingDuration, 1);
+    fill.style.width = (pct * 100) + '%';
+    const remaining = Math.max(0, (castingDuration - elapsed) / 1000);
+    document.getElementById('cast-bar-time').textContent = remaining.toFixed(1) + 's';
+    if (pct >= 1) {
+      completeCast();
+      return;
+    }
+    castingTimer = requestAnimationFrame(animateCastBar);
+  }
+  castingTimer = requestAnimationFrame(animateCastBar);
+}
+
+async function completeCast() {
+  if (castingState !== 'casting') return;
+  castingState = 'idle';
+  if (castingTimer) { cancelAnimationFrame(castingTimer); castingTimer = null; }
+  hideCastBar();
+
+  try {
+    const result = await apiPost('/api/cast/complete', null);
+    processCastResult(result, castingSpellID, castingTargetGUID);
+  } catch (err) { console.error('Complete cast error:', err); }
+  castingSpellID = null;
+  castingTargetGUID = null;
+}
+
+async function cancelCast() {
+  if (castingState !== 'casting') return;
+  castingState = 'idle';
+  if (castingTimer) { cancelAnimationFrame(castingTimer); castingTimer = null; }
+  hideCastBar();
+
+  try {
+    await apiPost('/api/cast/cancel', null);
+  } catch (err) { console.error('Cancel cast error:', err); }
+  castingSpellID = null;
+  castingTargetGUID = null;
+}
+
+function hideCastBar() {
+  document.getElementById('cast-bar').classList.add('hidden');
+  // Re-enable buttons that aren't on cooldown
+  document.querySelectorAll('.spell-btn').forEach(b => b.disabled = false);
+}
+
+function processCastResult(result, spellID, targetGUID) {
+  if (result.units) reconcileUnits(result.units);
+
+  let targetDied = false;
+  if (result.units) {
+    for (const u of result.units) {
+      if (!u.alive && u.guid !== CASTER_GUID) {
+        if (selectedTargetGUID != null && u.guid == selectedTargetGUID) {
+          targetDied = true;
+          deselectTarget();
         }
       }
     }
-  } catch (err) { console.error('Cast error:', err); }
+  }
+
+  if (result.result === 'success') {
+    processEvents(result.events || [], characters, CASTER_GUID, targetGUID);
+    updateStats(result.events || []);
+    updateSelfPanel(result.units?.find(u => u.guid == CASTER_GUID));
+    if (!targetDied && targetGUID) {
+      const targetData = result.units?.find(u => u.guid == targetGUID);
+      if (targetData) { updateEnemyInfo(targetData); updateTargetLock(targetData); }
+    }
+    addSpellLogEntry(result.events || [], spellMap[spellID]);
+    addServerLogEntry(result.events || [], spellMap[spellID]);
+  } else {
+    console.log('Cast result:', result.result, result.error);
+  }
+
+  // Auto-remove dead units
+  if (result.units) {
+    for (const u of result.units) {
+      if (!u.alive && u.guid !== CASTER_GUID) {
+        const group = characters.find(c => c.userData.guid == u.guid);
+        if (group && !group.userData.removed) {
+          group.userData.removed = true;
+          const opt = document.querySelector(`#enemy-select option[value="${u.guid}"]`);
+          if (opt) opt.remove();
+          clearAuraRings(group);
+          removeCharacter(group);
+          const idx = characters.indexOf(group);
+          if (idx >= 0) characters.splice(idx, 1);
+        }
+      }
+    }
+  }
 }
 
 // ---- Self Panel ----
@@ -394,6 +488,41 @@ function updateEnemyInfo(data) {
   document.getElementById('enemy-fire').textContent = Math.round(r.Fire || 0);
   document.getElementById('enemy-frost').textContent = Math.round(r.Frost || 0);
   document.getElementById('enemy-shadow').textContent = Math.round(r.Shadow || 0);
+  renderAuras(data.auras || []);
+}
+
+function renderAuras(auras) {
+  const container = document.getElementById('enemy-auras');
+  if (!container) return;
+
+  // Clear any existing countdown timer
+  if (auraCountdownTimer) { clearInterval(auraCountdownTimer); auraCountdownTimer = null; }
+
+  if (!auras.length) { container.innerHTML = ''; return; }
+
+  function buildRows() {
+    const now = performance.now();
+    return auras.map(a => {
+      const elapsed = now - a.timerStart;
+      const remaining = Math.max(0, (a.duration - elapsed) / 1000);
+      const sp = spellMap[a.spellID];
+      const name = a.name || (sp ? sp.name : `Spell#${a.spellID}`);
+      const typeLabel = a.auraType === 0 ? 'Buff' : a.auraType === 1 ? 'Debuff' : 'Other';
+      const typeClass = a.auraType === 0 ? 'buff' : a.auraType === 1 ? 'debuff' : 'other';
+      return `<div class="enemy-aura-row">
+        <span class="enemy-aura-type ${typeClass}">${typeLabel}</span>
+        <span class="enemy-aura-name">${name}</span>
+        <span class="enemy-aura-time">${remaining.toFixed(1)}s</span>
+      </div>`;
+    }).join('');
+  }
+
+  container.innerHTML = buildRows();
+
+  // Refresh countdown every 200ms
+  auraCountdownTimer = setInterval(() => {
+    container.innerHTML = buildRows();
+  }, 200);
 }
 
 function hpTier(pct) { return pct < 25 ? 'low' : pct < 50 ? 'medium' : 'high'; }
@@ -532,6 +661,10 @@ function renderActionBar(spells) {
     btn.appendChild(name);
 
     btn.addEventListener('click', () => {
+      if (castingState === 'casting') {
+        if (sp.id === castingSpellID) cancelCast();
+        return;
+      }
       if (selectedTargetGUID) {
         castSpell(sp.id, selectedTargetGUID);
       } else {
@@ -629,6 +762,14 @@ async function adjustLevel(delta) {
 // ---- Reset ----
 async function resetSession() {
   try {
+    // Cancel any active cast
+    if (castingState === 'casting') {
+      castingState = 'idle';
+      if (castingTimer) { cancelAnimationFrame(castingTimer); castingTimer = null; }
+      hideCastBar();
+      castingSpellID = null;
+      castingTargetGUID = null;
+    }
     await apiPost('/api/reset', null);
     clearAllCooldowns();
     resetStats();
@@ -700,7 +841,12 @@ document.getElementById('enemy-select').addEventListener('change', (e) => {
 });
 
 // Keyboard: Escape cancels targeting
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && targetingSpellID) exitTargetingMode(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (castingState === 'casting') cancelCast();
+    else if (targetingSpellID) exitTargetingMode();
+  }
+});
 
 // Safety: periodically verify target UI consistency
 setInterval(() => {

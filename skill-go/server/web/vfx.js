@@ -319,9 +319,6 @@ export function spawnHealBeam(fromGroup, toGroup) {
 
 // ---- Aura ring ----
 export function spawnAuraRing(targetGroup, colorHex) {
-  const pos = targetGroup.position.clone();
-  pos.y = 0.05;
-
   const geo = new THREE.RingGeometry(1, 1.3, 32);
   const mat = new THREE.MeshBasicMaterial({
     color: colorHex || 0x44ff44,
@@ -330,9 +327,9 @@ export function spawnAuraRing(targetGroup, colorHex) {
     side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(geo, mat);
-  ring.position.copy(pos);
+  ring.position.set(0, 0.05, 0);
   ring.rotation.x = -Math.PI / 2;
-  addToScene(ring);
+  targetGroup.add(ring);
 
   // Store ref so we can clean up on reset
   if (!targetGroup.userData.auraRings) targetGroup.userData.auraRings = [];
@@ -381,9 +378,9 @@ export function spawnCastGlow(casterGroup, schoolColor) {
 export function clearAuraRings(targetGroup) {
   if (!targetGroup.userData.auraRings) return;
   for (const ring of targetGroup.userData.auraRings) {
-    removeFromScene(ring);
     ring.geometry.dispose();
     ring.material.dispose();
+    targetGroup.remove(ring);
   }
   targetGroup.userData.auraRings = [];
 }

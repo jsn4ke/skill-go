@@ -28,6 +28,7 @@ const (
 // Aura is the top-level container — holds effects and metadata.
 type Aura struct {
 	SpellID      uint32
+	SourceName   string // name of the spell that created this aura
 	CasterGUID   uint64
 	Caster       *unit.Unit
 	AuraType     AuraType

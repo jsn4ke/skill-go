@@ -100,6 +100,7 @@
             <span>Frost: <span id="enemy-frost">0</span></span>
             <span>Shadow: <span id="enemy-shadow">0</span></span>
           </div>
+          <div id="enemy-auras" class="enemy-auras"></div>
         </div>
       </div>
     </div>
@@ -153,6 +154,16 @@
         <button id="btn-theme" class="action-btn" onclick="window.__toggleTheme()">Light</button>
         <button id="btn-reset" class="action-btn" onclick="window.__resetSession()">Reset</button>
       </div>
+    </div>
+
+    <!-- Cast bar (bottom-center, above action bar) -->
+    <div id="cast-bar" class="hidden">
+      <div id="cast-bar-icon"></div>
+      <span id="cast-bar-name">Fireball</span>
+      <div id="cast-bar-track">
+        <div id="cast-bar-fill"></div>
+      </div>
+      <span id="cast-bar-time">0.0s</span>
     </div>
   </div>
 

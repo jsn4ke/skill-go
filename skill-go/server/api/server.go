@@ -4,10 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"math"
 	"strconv"
@@ -62,7 +60,7 @@ type UnitJSON struct {
 	BlockValue  int32               `json:"blockValue"`
 	MinWeapon   int32               `json:"minWeapon"`
 	MaxWeapon   int32               `json:"maxWeapon"`
-	Auras       []string            `json:"auras"`
+	Auras       []AuraJSON         `json:"auras"`
 	Position    unit.Position       `json:"position"`
 }
 
@@ -112,6 +110,32 @@ type CastResponse struct {
 	Events   []TraceEventJSON `json:"events"`
 }
 
+// AuraJSON represents an active aura for the API.
+type AuraJSON struct {
+	SpellID    uint32 `json:"spellID"`
+	Name       string `json:"name"`       // source spell name
+	Duration  int32  `json:"duration"`   // total duration in ms
+	AuraType  int32  `json:"auraType"`   // 0=Buff, 1=Debuff, 2=Passive, 3=Proc
+	Stacks    int32  `json:"stacks"`
+	TimerStart int64  `json:"timerStart"` // unix ms when applied
+}
+
+// CastPrepareResponse is returned by /api/cast when the spell has a cast time.
+type CastPrepareResponse struct {
+	Result      string `json:"result"`
+	CastTimeMs  int32  `json:"castTimeMs"`
+	SpellID     uint32 `json:"spellID"`
+	SpellName   string `json:"spellName"`
+	SchoolName  string `json:"schoolName"`
+}
+
+// pendingCast holds a spell context between Prepare and Complete.
+type pendingCast struct {
+	ctx       *spell.SpellContext
+	spellInfo *spelldef.SpellInfo
+	targetIDs []uint64
+}
+
 // ---------------------------------------------------------------------------
 // GameState — single session state
 // ---------------------------------------------------------------------------
@@ -132,6 +156,7 @@ type GameState struct {
 	Tr           *trace.Trace
 	Hub          *trace.StreamHub
 	FileSink     *trace.FileSink
+	Pending      *pendingCast
 }
 
 // NewGameState creates a game session with predefined units and spells.
@@ -319,10 +344,21 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 		"Holy":     u.GetResistance(spelldef.SchoolMaskHoly),
 		"Physical": u.GetResistance(spelldef.SchoolMaskPhysical),
 	}
-	var auraNames []string
+	var auraList []AuraJSON
 	if auraMgr != nil {
 		for _, a := range auraMgr.Auras {
-			auraNames = append(auraNames, fmt.Sprintf("Spell#%d", a.SpellID))
+			timerStart := int64(0)
+			if len(a.Applications) > 0 {
+				timerStart = a.Applications[len(a.Applications)-1].TimerStart
+			}
+			auraList = append(auraList, AuraJSON{
+				SpellID:    a.SpellID,
+				Name:       a.SourceName,
+				Duration:  a.Duration,
+				AuraType:  int32(a.AuraType),
+				Stacks:     a.StackAmount,
+				TimerStart: timerStart,
+			})
 		}
 	}
 	return UnitJSON{
@@ -335,7 +371,7 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 		HitMelee: u.HitMelee, HitSpell: u.HitSpell,
 		Dodge: u.Dodge, Parry: u.Parry, Block: u.Block, BlockValue: u.BlockValue,
 		MinWeapon: u.MinWeaponDamage, MaxWeapon: u.MaxWeaponDamage,
-		Auras: auraNames, Position: u.Position,
+		Auras: auraList, Position: u.Position,
 	}
 }
 
@@ -472,6 +508,7 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 		}
 		a := &aura.Aura{
 			SpellID:    uint32(eff.EffectIndex) + 9000,
+			SourceName: ctx.GetSpellName(),
 			CasterGUID: ctx.Caster().GUID,
 			Caster:     ctx.Caster(),
 			AuraType:   aura.AuraType(eff.AuraType),
@@ -661,6 +698,7 @@ func handleAddUnit(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
+		defer gs.mu.Unlock()
 
 		_ = gs.addUnit(req.Name, req.Level)
 
@@ -683,6 +721,7 @@ func handleRemoveUnit(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
+		defer gs.mu.Unlock()
 
 		if err := gs.removeUnit(guid); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -773,6 +812,7 @@ func handleCast(gs *GameState) http.HandlerFunc {
 		}
 
 		gs.mu.Lock()
+		defer gs.mu.Unlock()
 
 		spellInfo := gs.FindSpell(req.SpellID)
 		if spellInfo == nil {
@@ -789,7 +829,7 @@ func handleCast(gs *GameState) http.HandlerFunc {
 			}
 		}
 		if len(targets) == 0 {
-			targets = gs.Targets // default to all targets
+			targets = gs.Targets
 		}
 
 		// Create spell context
@@ -807,46 +847,131 @@ func handleCast(gs *GameState) http.HandlerFunc {
 		ctx.ScriptRegistry = gs.Registry
 		ctx.Trace = castTrace
 
-		// Prepare (enters casting state, consumes mana)
+		// Prepare
 		result := ctx.Prepare()
 
-		// If spell has a cast time, wait for it then execute Cast()
-		if result == spelldef.CastResultSuccess && ctx.CastDuration > 0 {
-			gs.mu.Unlock()
-			time.Sleep(ctx.CastDuration)
-			gs.mu.Lock()
+		// Instant spell: execute Cast immediately (backward compatible)
+		if result == spelldef.CastResultSuccess && ctx.CastDuration == 0 {
 			result = ctx.Cast()
+			castEvents := gs.Recorder.Events()
+			resp := buildCastResponse(result, ctx, castEvents, gs)
+			writeJSON(w, http.StatusOK, resp)
+			gs.Recorder.Reset()
+			return
 		}
 
-		// Collect events from this cast
+		if result != spelldef.CastResultSuccess {
+			castEvents := gs.Recorder.Events()
+			resp := buildCastResponse(result, ctx, castEvents, gs)
+			writeJSON(w, http.StatusOK, resp)
+			gs.Recorder.Reset()
+			return
+		}
+
+		// Cast-time spell: store context, return immediately
+		gs.Pending = &pendingCast{
+			ctx:       ctx,
+			spellInfo: spellInfo,
+			targetIDs: req.TargetIDs,
+		}
+
 		castEvents := gs.Recorder.Events()
+		// Send prepare events so client can show cast glow
+		eventsJSON := make([]TraceEventJSON, len(castEvents))
+		for i, e := range castEvents {
+			eventsJSON[i] = eventToJSON(e)
+		}
+		gs.Recorder.Reset()
 
-		// Build response
-		unitsJSON := make([]UnitJSON, len(gs.AllUnits))
-		for i, u := range gs.AllUnits {
-			auraMgr := gs.AuraManagers[u.GUID]
-			unitsJSON[i] = unitToJSON(u, auraMgr)
+		writeJSON(w, http.StatusOK, CastPrepareResponse{
+			Result:     "preparing",
+			CastTimeMs: spellInfo.CastTime,
+			SpellID:    spellInfo.ID,
+			SpellName:  spellInfo.Name,
+			SchoolName: schoolName(spellInfo.SchoolMask),
+		})
+	}
+}
+
+func buildCastResponse(result spelldef.CastResult, ctx *spell.SpellContext, castEvents []trace.FlowEvent, gs *GameState) CastResponse {
+	unitsJSON := make([]UnitJSON, len(gs.AllUnits))
+	for i, u := range gs.AllUnits {
+		auraMgr := gs.AuraManagers[u.GUID]
+		unitsJSON[i] = unitToJSON(u, auraMgr)
+	}
+	eventsJSON := make([]TraceEventJSON, len(castEvents))
+	for i, e := range castEvents {
+		eventsJSON[i] = eventToJSON(e)
+	}
+	resp := CastResponse{
+		Result: castResultName(result),
+		Units:  unitsJSON,
+		Events: eventsJSON,
+	}
+	if result != spelldef.CastResultSuccess {
+		resp.Error = castErrorName(ctx.LastCastErr)
+	}
+	return resp
+}
+
+func handleCastComplete(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
 		}
 
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if gs.Pending == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no pending cast"})
+			return
+		}
+
+		ctx := gs.Pending.ctx
+		result := ctx.Cast()
+
+		castEvents := gs.Recorder.Events()
+		resp := buildCastResponse(result, ctx, castEvents, gs)
+		writeJSON(w, http.StatusOK, resp)
+
+		gs.Recorder.Reset()
+		gs.Pending = nil
+	}
+}
+
+func handleCastCancel(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if gs.Pending == nil {
+			writeJSON(w, http.StatusOK, map[string]string{"result": "no_pending"})
+			return
+		}
+
+		ctx := gs.Pending.ctx
+		ctx.Cancel()
+
+		castEvents := gs.Recorder.Events()
 		eventsJSON := make([]TraceEventJSON, len(castEvents))
 		for i, e := range castEvents {
 			eventsJSON[i] = eventToJSON(e)
 		}
 
-		resp := CastResponse{
-			Result: castResultName(result),
-			Units:  unitsJSON,
-			Events: eventsJSON,
-		}
-		if result != spelldef.CastResultSuccess {
-			resp.Error = castErrorName(ctx.LastCastErr)
-		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"result": "cancelled",
+			"events": eventsJSON,
+		})
 
-		writeJSON(w, http.StatusOK, resp)
-
-		// Clear trace events so next cast only returns fresh events
 		gs.Recorder.Reset()
-		gs.mu.Unlock()
+		gs.Pending = nil
 	}
 }
 
@@ -1250,6 +1375,8 @@ func NewServer(addr string, gs *GameState) *http.Server {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/cast", handleCast(gs))
+	mux.HandleFunc("/api/cast/complete", handleCastComplete(gs))
+	mux.HandleFunc("/api/cast/cancel", handleCastCancel(gs))
 	mux.HandleFunc("/api/units", handleUnits(gs))
 	mux.HandleFunc("/api/units/add", handleAddUnit(gs))
 	mux.HandleFunc("/api/units/update", handleUpdateUnit(gs))
@@ -1265,7 +1392,7 @@ func NewServer(addr string, gs *GameState) *http.Server {
 	handler := corsMiddleware(mux)
 
 	// Static file server for web/
-	fs := http.FileServer(http.Dir(filepath.Join("server", "web")))
+	fs := http.FileServer(http.Dir("D:/goes/TrinityCore/arch/skill-go/server/web"))
 	mux.Handle("/", fs)
 
 	return &http.Server{

@@ -367,3 +367,89 @@ body.light-theme {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+
+/* Cast Bar — classic WoW style */
+#cast-bar {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 200px;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.75);
+  border: 1px solid #555;
+  border-radius: 4px;
+  z-index: 200;
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+#cast-bar.hidden { display: none; }
+
+#cast-bar-icon {
+  width: 24px; height: 24px;
+  flex-shrink: 0;
+}
+#cast-bar-icon svg { width: 24px; height: 24px; }
+
+#cast-bar-name {
+  font-size: 11px;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+#cast-bar-track {
+  flex: 1;
+  height: 10px;
+  background: #333;
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 60px;
+}
+#cast-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #ff4400;
+  border-radius: 2px;
+  transition: none;
+}
+
+#cast-bar-time {
+  font-size: 11px;
+  color: #ccc;
+  white-space: nowrap;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* Aura list in target panel */
+.enemy-auras {
+  margin-top: 6px;
+  border-top: 1px solid #333;
+  padding-top: 6px;
+}
+.enemy-auras:empty { display: none; }
+.enemy-aura-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+.enemy-aura-type {
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: #fff;
+}
+.enemy-aura-type.buff   { background: #2a5a2a; color: #88ff88; }
+.enemy-aura-type.debuff { background: #5a2a2a; color: #ff8888; }
+.enemy-aura-name { flex: 1; color: #ccc; }
+.enemy-aura-time { color: #aaa; font-size: 10px; min-width: 40px; text-align: right; }

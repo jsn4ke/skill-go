@@ -41,16 +41,6 @@ export function processEvents(events, characters, casterGUID, selectedTargetGUID
         lastSpellID = e.spellId || lastSpellID;
       }
 
-      // Cast preparation glow
-      if (span === 'spell' && event === 'prepare') {
-        if (casterGroup) {
-          const spell = spellMap_entry(e.spellId);
-          const color = spell ? (SCHOOL_COLORS[spell.schoolName] || 0x4488ff) : 0x4488ff;
-          spawnCastGlow(casterGroup, color);
-        }
-        continue;
-      }
-
       // Cooldown added → notify HUD
       if (span === 'cooldown' && event === 'add_cooldown') {
         if (onCooldownStart) {
