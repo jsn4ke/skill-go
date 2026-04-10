@@ -1,9 +1,18 @@
 // config.js — Spell Config Editor page logic
 
 let spells = []; // current spell data from server
+const effectTypes = ['SchoolDamage', 'Heal', 'ApplyAura', 'TriggerSpell', 'Energize', 'WeaponDamage'];
+const auraTypes = [
+  { value: 0, label: 'None' },
+  { value: 1, label: 'Buff' },
+  { value: 2, label: 'Debuff' },
+  { value: 3, label: 'Passive' },
+  { value: 4, label: 'Proc' },
+];
 
 document.addEventListener('DOMContentLoaded', () => {
   loadSpells();
+  addCreateEffect(); // start with one empty effect row
 });
 
 // ---- API ----
@@ -97,6 +106,7 @@ function render() {
         </div>
         <div>
           <span class="spell-summary">CD: ${spell.cd}ms | Mana: ${spell.powerCost}</span>
+          <button class="btn-delete" data-id="${spell.id}" title="Delete spell">&#10005;</button>
           <span class="spell-toggle">&#9654;</span>
         </div>
       </div>
@@ -136,11 +146,18 @@ function render() {
     `;
 
     // Toggle expand
-    card.querySelector('.spell-header').addEventListener('click', () => {
+    card.querySelector('.spell-header').addEventListener('click', (e) => {
+      if (e.target.closest('.btn-delete')) return;
       const body = card.querySelector('.spell-body');
       const toggle = card.querySelector('.spell-toggle');
       body.classList.toggle('expanded');
       toggle.classList.toggle('expanded');
+    });
+
+    // Delete button
+    card.querySelector('.btn-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteSpell(spell.id, card);
     });
 
     // Apply button
@@ -217,4 +234,125 @@ function escHtml(str) {
 function escAttr(str) {
   if (!str) return '';
   return str.replace(/[^a-zA-Z0-9_]/g, '_');
+}
+
+// ---- Create Spell ----
+function addCreateEffect() {
+  const list = document.getElementById('create-effect-list');
+  const idx = list.children.length;
+  const row = document.createElement('div');
+  row.className = 'effect-block';
+  row.dataset.idx = idx;
+  row.innerHTML = `
+    <div class="create-effect-header">
+      <span class="effect-type">#${idx} Effect</span>
+      <button class="btn-remove-effect" onclick="this.closest('.effect-block').remove(); reindexCreateEffects();" title="Remove">&#10005;</button>
+    </div>
+    <div class="form-row">
+      <label>Effect Type</label>
+      <select class="eff-type">
+        ${effectTypes.map(t => `<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row">
+      <label>Base Points</label>
+      <input type="number" class="eff-bp" value="0">
+    </div>
+    <div class="form-row">
+      <label>Coefficient</label>
+      <input type="number" step="0.1" class="eff-coef" value="0">
+    </div>
+    <div class="form-row">
+      <label>Weapon %</label>
+      <input type="number" step="0.1" class="eff-wp" value="0">
+    </div>
+    <div class="form-row">
+      <label>Aura Duration</label>
+      <input type="number" class="eff-ad" value="0">
+      <span class="unit">ms</span>
+    </div>
+    <div class="form-row">
+      <label>Aura Type</label>
+      <select class="eff-at">
+        ${auraTypes.map(a => `<option value="${a.value}">${a.label}</option>`).join('')}
+      </select>
+    </div>
+  `;
+  list.appendChild(row);
+}
+
+function reindexCreateEffects() {
+  document.querySelectorAll('#create-effect-list .effect-block').forEach((block, i) => {
+    block.dataset.idx = i;
+    block.querySelector('.effect-type').textContent = `#${i} Effect`;
+  });
+}
+
+async function createSpell() {
+  const name = document.getElementById('create-name').value.trim();
+  if (!name) {
+    showFeedback('Spell name is required', 'error');
+    return;
+  }
+
+  const effects = [];
+  document.querySelectorAll('#create-effect-list .effect-block').forEach((block, i) => {
+    effects.push({
+      effectType: block.querySelector('.eff-type').value,
+      basePoints: parseInt(block.querySelector('.eff-bp').value) || 0,
+      coef: parseFloat(block.querySelector('.eff-coef').value) || 0,
+      weaponPercent: parseFloat(block.querySelector('.eff-wp').value) || 0,
+      auraDuration: parseInt(block.querySelector('.eff-ad').value) || 0,
+      auraType: parseInt(block.querySelector('.eff-at').value) || 0,
+    });
+  });
+
+  const data = {
+    name,
+    schoolName: document.getElementById('create-school').value,
+    castTime: parseInt(document.getElementById('create-castTime').value) || 0,
+    cooldown: parseInt(document.getElementById('create-cd').value) || 0,
+    categoryCD: parseInt(document.getElementById('create-catCD').value) || 0,
+    powerCost: parseInt(document.getElementById('create-power').value) || 0,
+    maxTargets: parseInt(document.getElementById('create-maxTargets').value) || 1,
+    effects,
+  };
+
+  try {
+    const resp = await fetch('/api/spells', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (resp.ok || resp.status === 201) {
+      showFeedback(`Spell "${name}" created`, 'success');
+      document.getElementById('create-name').value = '';
+      document.getElementById('create-effect-list').innerHTML = '';
+      addCreateEffect();
+      loadSpells();
+    } else {
+      const err = await resp.json();
+      showFeedback(err.error || 'Create failed', 'error');
+    }
+  } catch (e) {
+    showFeedback('Request failed: ' + e.message, 'error');
+  }
+}
+
+// ---- Delete Spell ----
+async function deleteSpell(id, cardEl) {
+  if (!confirm(`Delete spell #${id}? This cannot be undone.`)) return;
+
+  try {
+    const resp = await fetch(`/api/spells/${id}`, { method: 'DELETE' });
+    if (resp.ok) {
+      cardEl.remove();
+      showFeedback(`Spell #${id} deleted`, 'success');
+    } else {
+      const err = await resp.json();
+      showFeedback(err.error || 'Delete failed', 'error');
+    }
+  } catch (e) {
+    showFeedback('Request failed: ' + e.message, 'error');
+  }
 }

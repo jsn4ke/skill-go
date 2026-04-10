@@ -19,6 +19,56 @@
 
     <div id="spell-list"></div>
 
+    <div id="create-section" class="create-section">
+      <h2 class="create-title">Create New Spell</h2>
+      <div class="form-row">
+        <label>Name *</label>
+        <input type="text" id="create-name" placeholder="Spell name">
+      </div>
+      <div class="form-row">
+        <label>School</label>
+        <select id="create-school">
+          <option value="Fire">Fire</option>
+          <option value="Frost">Frost</option>
+          <option value="Arcane">Arcane</option>
+          <option value="Nature">Nature</option>
+          <option value="Shadow">Shadow</option>
+          <option value="Holy">Holy</option>
+          <option value="Physical">Physical</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Cast Time</label>
+        <input type="number" id="create-castTime" value="0">
+        <span class="unit">ms</span>
+      </div>
+      <div class="form-row">
+        <label>Cooldown</label>
+        <input type="number" id="create-cd" value="0">
+        <span class="unit">ms</span>
+      </div>
+      <div class="form-row">
+        <label>Category CD</label>
+        <input type="number" id="create-catCD" value="0">
+        <span class="unit">ms</span>
+      </div>
+      <div class="form-row">
+        <label>Power Cost</label>
+        <input type="number" id="create-power" value="0">
+      </div>
+      <div class="form-row">
+        <label>Max Targets</label>
+        <input type="number" id="create-maxTargets" value="1">
+      </div>
+      <div id="create-effects" class="effect-section">
+        <h3>Effects <button class="btn-add-effect" onclick="addCreateEffect()">+ Add Effect</button></h3>
+        <div id="create-effect-list"></div>
+      </div>
+      <div class="apply-row">
+        <button class="btn-create" onclick="createSpell()">Create Spell</button>
+      </div>
+    </div>
+
     <div id="feedback"></div>
   </div>
 

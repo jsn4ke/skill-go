@@ -211,6 +211,81 @@ body {
   z-index: 100;
 }
 
+/* Delete button */
+.btn-delete {
+  background: none;
+  border: 1px solid #663333;
+  color: #ff6666;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-delete:hover { background: #4a2a2a; }
+
+/* Create section */
+.create-section {
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 14px;
+  margin-top: 16px;
+  background: #1e1e32;
+}
+
+.create-title {
+  font-size: 14px;
+  color: #88aaff;
+  margin-bottom: 12px;
+}
+
+.btn-create {
+  background: #2a4a2a;
+  color: #88ff88;
+  border: 1px solid #448844;
+  padding: 6px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn-create:hover { background: #3a6a3a; }
+
+.btn-add-effect {
+  background: #2a2a4a;
+  color: #88aaff;
+  border: 1px solid #444;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  margin-left: 8px;
+}
+.btn-add-effect:hover { background: #3a3a5a; }
+
+.btn-remove-effect {
+  background: none;
+  border: none;
+  color: #ff6666;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 4px;
+}
+.btn-remove-effect:hover { color: #ff9999; }
+
+.create-effect-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
 .feedback-msg {
   padding: 8px 16px;
   border-radius: 6px;

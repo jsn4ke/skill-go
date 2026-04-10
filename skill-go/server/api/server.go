@@ -127,6 +127,7 @@ type GameState struct {
 	Store        *effect.Store
 	Registry     *script.Registry
 	SpellBook    []*spelldef.SpellInfo
+	NextSpellID  uint32
 	Tr           *trace.Trace
 	Hub          *trace.StreamHub
 	FileSink     *trace.FileSink
@@ -203,6 +204,14 @@ func NewGameState(fileSink *trace.FileSink) *GameState {
 
 	effect.RegisterExtended(store, makeAuraHandler(auraProvider), nil)
 	gs.initSpellBook()
+
+	// Auto-ID: start after max preset spell ID
+	for _, s := range gs.SpellBook {
+		if s.ID >= gs.NextSpellID {
+			gs.NextSpellID = s.ID + 1
+		}
+	}
+
 	return gs
 }
 
@@ -302,6 +311,30 @@ func (gs *GameState) initSpellBook() {
 			MaxTargets: 1,
 			Effects: []spelldef.SpellEffectInfo{
 				{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, SchoolMask: spelldef.SchoolMaskShadow, BasePoints: 400, Coef: 0.9},
+			},
+		},
+		{
+			ID:         1009,
+			Name:       "Innervate",
+			SchoolMask: spelldef.SchoolMaskNature,
+			CastTime:   0,
+			RecoveryTime: 180000,
+			PowerCost:  0,
+			MaxTargets: 1,
+			Effects: []spelldef.SpellEffectInfo{
+				{EffectIndex: 0, EffectType: spelldef.SpellEffectEnergize, EnergizeType: spelldef.PowerTypeMana, EnergizeAmount: 500},
+			},
+		},
+		{
+			ID:         1010,
+			Name:       "Nature's Swiftness",
+			SchoolMask: spelldef.SchoolMaskNature,
+			CastTime:   0,
+			RecoveryTime: 180000,
+			PowerCost:  0,
+			MaxTargets: 1,
+			Effects: []spelldef.SpellEffectInfo{
+				{EffectIndex: 0, EffectType: spelldef.SpellEffectTriggerSpell, TriggerSpellID: 1004},
 			},
 		},
 	}
@@ -1008,6 +1041,130 @@ func handleReset(gs *GameState) http.HandlerFunc {
 	}
 }
 
+// CreateSpellRequest is the JSON body for POST /api/spells.
+type CreateSpellRequest struct {
+	Name           string                `json:"name"`
+	SchoolName     string                `json:"schoolName"`
+	CastTime       int32                 `json:"castTime"`
+	RecoveryTime   int32                 `json:"cooldown"`
+	CategoryRecoveryTime int32           `json:"categoryCD"`
+	PowerCost      int32                 `json:"powerCost"`
+	MaxTargets     int                   `json:"maxTargets"`
+	Effects        []CreateEffectRequest `json:"effects"`
+}
+
+// CreateEffectRequest defines a single effect for spell creation.
+type CreateEffectRequest struct {
+	EffectType    string  `json:"effectType"`
+	BasePoints    int32   `json:"basePoints"`
+	Coef          float64 `json:"coef"`
+	WeaponPercent float64 `json:"weaponPercent"`
+	AuraDuration  int32   `json:"auraDuration"`
+	AuraType      int32   `json:"auraType"`
+}
+
+// schoolMaskFromName maps a school name string to a SchoolMask.
+func schoolMaskFromName(name string) spelldef.SchoolMask {
+	switch name {
+	case "Fire":
+		return spelldef.SchoolMaskFire
+	case "Frost":
+		return spelldef.SchoolMaskFrost
+	case "Arcane":
+		return spelldef.SchoolMaskArcane
+	case "Nature":
+		return spelldef.SchoolMaskNature
+	case "Shadow":
+		return spelldef.SchoolMaskShadow
+	case "Holy":
+		return spelldef.SchoolMaskHoly
+	case "Physical":
+		return spelldef.SchoolMaskPhysical
+	default:
+		return spelldef.SchoolMaskFire
+	}
+}
+
+// effectTypeFromName maps an effect type name string to a SpellEffectType.
+func effectTypeFromName(name string) spelldef.SpellEffectType {
+	switch name {
+	case "SchoolDamage":
+		return spelldef.SpellEffectSchoolDamage
+	case "Heal":
+		return spelldef.SpellEffectHeal
+	case "ApplyAura":
+		return spelldef.SpellEffectApplyAura
+	case "TriggerSpell":
+		return spelldef.SpellEffectTriggerSpell
+	case "Energize":
+		return spelldef.SpellEffectEnergize
+	case "WeaponDamage":
+		return spelldef.SpellEffectWeaponDamage
+	default:
+		return spelldef.SpellEffectNone
+	}
+}
+
+func handleCreateSpell(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		var req CreateSpellRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+			return
+		}
+
+		if req.Name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		schoolMask := schoolMaskFromName(req.SchoolName)
+
+		// Build effects
+		effects := make([]spelldef.SpellEffectInfo, len(req.Effects))
+		for i, ce := range req.Effects {
+			effects[i] = spelldef.SpellEffectInfo{
+				EffectIndex:   i,
+				EffectType:    effectTypeFromName(ce.EffectType),
+				SchoolMask:    schoolMask,
+				BasePoints:    ce.BasePoints,
+				Coef:          ce.Coef,
+				WeaponPercent: ce.WeaponPercent,
+				AuraDuration:  ce.AuraDuration,
+				AuraType:      ce.AuraType,
+			}
+			if effects[i].EffectType == spelldef.SpellEffectEnergize {
+				effects[i].EnergizeType = spelldef.PowerTypeMana
+				effects[i].EnergizeAmount = ce.BasePoints
+			}
+		}
+
+		spell := &spelldef.SpellInfo{
+			ID:                   gs.NextSpellID,
+			Name:                 req.Name,
+			SchoolMask:           schoolMask,
+			CastTime:             req.CastTime,
+			RecoveryTime:         req.RecoveryTime,
+			CategoryRecoveryTime: req.CategoryRecoveryTime,
+			PowerCost:            req.PowerCost,
+			MaxTargets:           req.MaxTargets,
+			Effects:              effects,
+		}
+		gs.SpellBook = append(gs.SpellBook, spell)
+		gs.NextSpellID++
+
+		writeJSON(w, http.StatusCreated, spellToJSON(spell))
+	}
+}
+
 // UpdateSpellRequest is the JSON body for PUT /api/spells/{id}.
 type UpdateSpellRequest struct {
 	Name           string  `json:"name"`
@@ -1027,6 +1184,45 @@ type UpdateEffectRequest struct {
 	WeaponPercent float64 `json:"weaponPercent"`
 	AuraDuration  int32   `json:"auraDuration"`
 	AuraType      int32   `json:"auraType"`
+}
+
+func handleDeleteSpell(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		path := strings.TrimPrefix(r.URL.Path, "/api/spells/")
+		id, err := strconv.ParseUint(path, 10, 32)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid spell ID"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		idx := -1
+		for i, s := range gs.SpellBook {
+			if s.ID == uint32(id) {
+				idx = i
+				break
+			}
+		}
+		if idx == -1 {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("spell %d not found", id)})
+			return
+		}
+
+		// Remove from SpellBook
+		gs.SpellBook = append(gs.SpellBook[:idx], gs.SpellBook[idx+1:]...)
+
+		// Clean up cooldown/charge state
+		gs.History.RemoveCooldown(uint32(id))
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	}
 }
 
 func handleUpdateSpell(gs *GameState) http.HandlerFunc {
@@ -1088,11 +1284,36 @@ func handleUpdateSpell(gs *GameState) http.HandlerFunc {
 	}
 }
 
+// handleSpellRoutes dispatches /api/spells requests by method.
+func handleSpellRoutes(gs *GameState) http.HandlerFunc {
+	get := handleSpells(gs)
+	post := handleCreateSpell(gs)
+	putDel := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			handleUpdateSpell(gs).ServeHTTP(w, r)
+		} else if r.Method == http.MethodDelete {
+			handleDeleteSpell(gs).ServeHTTP(w, r)
+		} else {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		}
+	})
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			get.ServeHTTP(w, r)
+		case http.MethodPost:
+			post.ServeHTTP(w, r)
+		default:
+			putDel.ServeHTTP(w, r)
+		}
+	}
+}
+
 // corsMiddleware adds CORS headers.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -1115,8 +1336,8 @@ func NewServer(addr string, gs *GameState) *http.Server {
 	mux.HandleFunc("/api/trace", handleTrace(gs))
 	mux.HandleFunc("/api/trace/stream", handleTraceStream(gs))
 	mux.HandleFunc("/api/trace/history", handleTraceHistory(gs))
-	mux.HandleFunc("/api/spells", handleSpells(gs))
-	mux.HandleFunc("/api/spells/", handleUpdateSpell(gs))
+	mux.HandleFunc("/api/spells", handleSpellRoutes(gs))
+	mux.HandleFunc("/api/spells/", handleSpellRoutes(gs))
 	mux.HandleFunc("/api/reset", handleReset(gs))
 
 	handler := corsMiddleware(mux)
