@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>skill-go 3D Battle Demo</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <div id="stats-panel">
+      <span>Casts: <strong id="stat-casts">0</strong></span>
+      <span>Damage: <strong id="stat-damage">0</strong></span>
+      <span>Healing: <strong id="stat-healing">0</strong></span>
+      <span>Crits: <strong id="stat-crits">0</strong></span>
+      <span>Misses: <strong id="stat-misses">0</strong></span>
+      <span>Crit%: <strong id="stat-critrate">0%</strong></span>
+    </div>
+    <div id="action-bar">
+      <div id="spell-buttons"></div>
+      <div id="action-buttons">
+        <button id="btn-reset" class="action-btn" onclick="window.__resetSession()">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

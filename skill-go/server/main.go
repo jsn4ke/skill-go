@@ -1,9 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"os"
 
+	"skill-go/server/api"
 	"skill-go/server/aura"
 	"skill-go/server/cooldown"
 	"skill-go/server/effect"
@@ -16,7 +19,39 @@ import (
 )
 
 func main() {
+	cli := flag.Bool("cli", false, "run in CLI demo mode instead of HTTP server")
+	port := flag.String("port", ":8080", "HTTP listen address")
+	flag.Parse()
+
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
+
+	if *cli {
+		runCLIDemo()
+	} else {
+		runHTTPServer(*port)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HTTP server mode (default)
+// ---------------------------------------------------------------------------
+
+func runHTTPServer(addr string) {
+	gs := api.NewGameState()
+	srv := api.NewServer(addr, gs)
+	fmt.Printf("=== skill-go Spell Demo ===\n")
+	fmt.Printf("Open http://localhost%s in your browser\n\n", addr)
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CLI demo mode (--cli flag)
+// ---------------------------------------------------------------------------
+
+func runCLIDemo() {
 	fmt.Println("=== skill-go server: spell flow tracing demo ===")
 	fmt.Println()
 
