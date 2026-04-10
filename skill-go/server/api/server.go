@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
+
+	"math"
+	"strconv"
 
 	"skill-go/server/aura"
 	"skill-go/server/cooldown"
@@ -76,7 +81,8 @@ type SpellJSON struct {
 
 // TraceEventJSON represents a trace event for the API.
 type TraceEventJSON struct {
-	Timestamp int64                  `json:"timestamp"`
+	FlowID    uint64                  `json:"flowId"`
+	Timestamp int64                   `json:"timestamp"`
 	Span      string                  `json:"span"`
 	Event     string                  `json:"event"`
 	SpellID   uint32                  `json:"spellId"`
@@ -109,10 +115,13 @@ type GameState struct {
 	Registry     *script.Registry
 	SpellBook    []*spelldef.SpellInfo
 	Tr           *trace.Trace
+	Hub          *trace.StreamHub
+	FileSink     *trace.FileSink
 }
 
 // NewGameState creates a game session with predefined units and spells.
-func NewGameState() *GameState {
+// Optional FileSink will be wired into all trace paths for file logging.
+func NewGameState(fileSink *trace.FileSink) *GameState {
 	mage := unit.NewUnit(1, "Mage", 5000, 20000)
 	mage.SetLevel(60)
 	mage.SpellPower = 500
@@ -148,7 +157,16 @@ func NewGameState() *GameState {
 	}
 
 	recorder := trace.NewFlowRecorder()
-	tr := trace.NewTraceWithSinks(recorder)
+	hub := trace.NewStreamHub(10000)
+	streamSink := trace.NewStreamSink(hub)
+
+	// Build sink list for trace creation
+	var sinks []trace.TraceSink
+	sinks = append(sinks, recorder, streamSink)
+	if fileSink != nil {
+		sinks = append(sinks, fileSink)
+	}
+	tr := trace.NewTraceWithSinks(sinks...)
 
 	store := effect.NewStore()
 	registry := script.NewRegistry()
@@ -166,6 +184,8 @@ func NewGameState() *GameState {
 		Store:        store,
 		Registry:     registry,
 		Tr:           tr,
+		Hub:          hub,
+		FileSink:     fileSink,
 	}
 
 	effect.RegisterExtended(store, makeAuraHandler(auraProvider), nil)
@@ -300,7 +320,15 @@ func (gs *GameState) Reset() {
 
 	// Clear trace
 	gs.Recorder.Reset()
-	gs.Tr = trace.NewTraceWithSinks(gs.Recorder)
+	gs.Hub.Clear()
+	gs.Hub.ClearSubscribers()
+
+	var sinks []trace.TraceSink
+	sinks = append(sinks, gs.Recorder, trace.NewStreamSink(gs.Hub))
+	if gs.FileSink != nil {
+		sinks = append(sinks, gs.FileSink)
+	}
+	gs.Tr = trace.NewTraceWithSinks(sinks...)
 }
 
 func (gs *GameState) FindSpell(id uint32) *spelldef.SpellInfo {
@@ -441,6 +469,7 @@ func castErrorName(e spelldef.CastError) string {
 
 func eventToJSON(e trace.FlowEvent) TraceEventJSON {
 	return TraceEventJSON{
+		FlowID:    e.FlowID,
 		Timestamp: e.Timestamp.UnixMilli(),
 		Span:      e.Span,
 		Event:     e.Event,
@@ -506,6 +535,249 @@ func (t *tracingCooldownHistory) TraceStartGCD(category int32, durationMs int32,
 	t.SpellHistory.TraceStartGCD(category, durationMs, tr)
 }
 
+// AddUnitRequest is the JSON body for POST /api/units/add.
+type AddUnitRequest struct {
+	Name  string `json:"name"`
+	Level uint8  `json:"level"`
+}
+
+// MoveUnitRequest is the JSON body for POST /api/units/move.
+type MoveUnitRequest struct {
+	GUID uint64  `json:"guid"`
+	X    float64 `json:"x"`
+	Z    float64 `json:"z"`
+}
+
+// UpdateUnitRequest is the JSON body for POST /api/units/update.
+type UpdateUnitRequest struct {
+	GUID  uint64 `json:"guid"`
+	Level uint8  `json:"level"`
+}
+
+// nextGUID is a counter for generating unique GUIDs for new units.
+var nextGUID uint64 = 100
+
+func (gs *GameState) nextUnitGUID() uint64 {
+	nextGUID++
+	return nextGUID
+}
+
+// addUnit creates a new unit and adds it to the game state.
+func (gs *GameState) addUnit(name string, level uint8) *unit.Unit {
+	if name == "" {
+		name = "Unknown"
+	}
+	if level == 0 {
+		level = 60
+	}
+
+	// Level-scaled stats (similar to TrinityCore formulas)
+	lvl := float64(level)
+	maxHP := int32(100 + lvl*50)            // base HP scaling
+	maxMana := int32(50 + lvl*20)           // base mana scaling
+	armor := int32(lvl * 30)                // armor scaling
+	spellPower := int32(lvl * 5)            // minimal SP for enemies
+
+	u := unit.NewUnit(gs.nextUnitGUID(), name, maxHP, maxMana)
+	u.SetLevel(level)
+	u.Armor = armor
+	u.SpellPower = spellPower
+
+	// Default position: spread along X axis with random Z offset
+	offsetX := 25.0 + float64(len(gs.AllUnits))*5 + math.Round(float64(len(gs.AllUnits)%3)*3)
+	offsetZ := float64(((len(gs.AllUnits)*7+3)%11) - 5) * 1.5
+	u.Position = unit.Position{X: offsetX, Y: 0, Z: offsetZ}
+
+	// Create aura manager
+	auraMgr := aura.NewAuraManager(u)
+	gs.AuraManagers[u.GUID] = auraMgr
+
+	// Add to state
+	gs.AllUnits = append(gs.AllUnits, u)
+	gs.Targets = append(gs.Targets, u)
+
+	return u
+}
+
+// removeUnit removes a unit by GUID. Returns error if trying to remove caster.
+func (gs *GameState) removeUnit(guid uint64) error {
+	if guid == gs.Caster.GUID {
+		return fmt.Errorf("cannot remove caster")
+	}
+
+	// Remove from AllUnits
+	found := false
+	var newAll []*unit.Unit
+	for _, u := range gs.AllUnits {
+		if u.GUID == guid {
+			found = true
+			continue
+		}
+		newAll = append(newAll, u)
+	}
+	if !found {
+		return fmt.Errorf("unit not found")
+	}
+	gs.AllUnits = newAll
+
+	// Remove from Targets
+	var newTargets []*unit.Unit
+	for _, u := range gs.Targets {
+		if u.GUID != guid {
+			newTargets = append(newTargets, u)
+		}
+	}
+	gs.Targets = newTargets
+
+	// Clean up aura manager
+	if mgr, ok := gs.AuraManagers[guid]; ok {
+		for _, a := range mgr.Auras {
+			mgr.RemoveAura(a, aura.RemoveModeDefault, nil, 0, "")
+		}
+		delete(gs.AuraManagers, guid)
+	}
+
+	return nil
+}
+
+func (gs *GameState) moveUnit(guid uint64, x, z float64) error {
+	u := gs.FindUnit(guid)
+	if u == nil {
+		return fmt.Errorf("unit not found")
+	}
+	u.Position = unit.Position{X: x, Y: 0, Z: z}
+	return nil
+}
+
+func (gs *GameState) updateUnitLevel(guid uint64, level uint8) error {
+	if guid == gs.Caster.GUID {
+		return fmt.Errorf("cannot modify caster")
+	}
+	u := gs.FindUnit(guid)
+	if u == nil {
+		return fmt.Errorf("unit not found")
+	}
+	if level == 0 {
+		level = 60
+	}
+	u.SetLevel(level)
+	lvl := float64(level)
+	u.MaxHealth = int32(100 + lvl*50)
+	u.Health = u.MaxHealth
+	u.MaxMana = int32(50 + lvl*20)
+	u.Mana = u.MaxMana
+	u.Armor = int32(lvl * 30)
+	u.SpellPower = int32(lvl * 5)
+	return nil
+}
+
+func unitListJSON(gs *GameState) []UnitJSON {
+	unitsJSON := make([]UnitJSON, len(gs.AllUnits))
+	for i, u := range gs.AllUnits {
+		auraMgr := gs.AuraManagers[u.GUID]
+		unitsJSON[i] = unitToJSON(u, auraMgr)
+	}
+	return unitsJSON
+}
+
+func handleAddUnit(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		var req AddUnitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		_ = gs.addUnit(req.Name, req.Level)
+
+		writeJSON(w, http.StatusOK, unitListJSON(gs))
+	}
+}
+
+func handleRemoveUnit(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		path := strings.TrimPrefix(r.URL.Path, "/api/units/")
+		guid, err := strconv.ParseUint(path, 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid GUID"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if err := gs.removeUnit(guid); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, unitListJSON(gs))
+	}
+}
+
+func handleMoveUnit(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		var req MoveUnitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if err := gs.moveUnit(req.GUID, req.X, req.Z); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, unitListJSON(gs))
+	}
+}
+
+func handleUpdateUnit(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		var req UpdateUnitRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if err := gs.updateUnitLevel(req.GUID, req.Level); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, unitListJSON(gs))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // HTTP handlers
 // ---------------------------------------------------------------------------
@@ -551,8 +823,12 @@ func handleCast(gs *GameState) http.HandlerFunc {
 		}
 
 		// Create spell context
-		// Add recorder sink to trace
-		castTrace := trace.NewTraceWithSinks(gs.Recorder)
+		var castSinks []trace.TraceSink
+		castSinks = append(castSinks, gs.Recorder, trace.NewStreamSink(gs.Hub))
+		if gs.FileSink != nil {
+			castSinks = append(castSinks, gs.FileSink)
+		}
+		castTrace := trace.NewTraceWithSinks(castSinks...)
 		ctx := spell.New(spellInfo.ID, spellInfo, gs.Caster, targets)
 		ctx.EffectStore = gs.Store
 		ctx.HistoryProvider = gs.History
@@ -609,6 +885,65 @@ func handleUnits(gs *GameState) http.HandlerFunc {
 	}
 }
 
+
+func handleTraceStream(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming not supported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+
+		sub := gs.Hub.Subscribe()
+		defer gs.Hub.Unsubscribe(sub)
+
+		ctx := r.Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case e, ok := <-sub.Events():
+				if !ok {
+					return
+				}
+				data, _ := json.Marshal(eventToJSON(e))
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+func handleTraceHistory(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		gs.mu.RLock()
+		defer gs.mu.RUnlock()
+
+		var flowID uint64
+		if v := r.URL.Query().Get("flow_id"); v != "" {
+			flowID, _ = strconv.ParseUint(v, 10, 64)
+		}
+		span := r.URL.Query().Get("span")
+		limit := 100
+		if v := r.URL.Query().Get("limit"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+
+		events := gs.Hub.Query(flowID, span, limit)
+		eventsJSON := make([]TraceEventJSON, len(events))
+		for i, e := range events {
+			eventsJSON[i] = eventToJSON(e)
+		}
+		writeJSON(w, http.StatusOK, eventsJSON)
+	}
+}
+
 func handleTrace(gs *GameState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		gs.mu.Lock()
@@ -616,9 +951,11 @@ func handleTrace(gs *GameState) http.HandlerFunc {
 
 		if r.URL.Query().Get("clear") == "true" {
 			gs.Recorder.Reset()
+			gs.Hub.Clear()
 		}
 
-		events := gs.Recorder.Events()
+		// Return from ring buffer for full session history
+		events := gs.Hub.Query(0, "", 0)
 		eventsJSON := make([]TraceEventJSON, len(events))
 		for i, e := range events {
 			eventsJSON[i] = eventToJSON(e)
@@ -667,14 +1004,20 @@ func NewServer(addr string, gs *GameState) *http.Server {
 
 	mux.HandleFunc("/api/cast", handleCast(gs))
 	mux.HandleFunc("/api/units", handleUnits(gs))
+	mux.HandleFunc("/api/units/add", handleAddUnit(gs))
+	mux.HandleFunc("/api/units/update", handleUpdateUnit(gs))
+	mux.HandleFunc("/api/units/move", handleMoveUnit(gs))
+	mux.HandleFunc("/api/units/", handleRemoveUnit(gs)) // matches /api/units/{guid} for DELETE
 	mux.HandleFunc("/api/trace", handleTrace(gs))
+	mux.HandleFunc("/api/trace/stream", handleTraceStream(gs))
+	mux.HandleFunc("/api/trace/history", handleTraceHistory(gs))
 	mux.HandleFunc("/api/spells", handleSpells(gs))
 	mux.HandleFunc("/api/reset", handleReset(gs))
 
 	handler := corsMiddleware(mux)
 
 	// Static file server for web/
-	fs := http.FileServer(http.Dir("web"))
+	fs := http.FileServer(http.Dir(filepath.Join("server", "web")))
 	mux.Handle("/", fs)
 
 	return &http.Server{

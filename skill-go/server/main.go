@@ -4,7 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"skill-go/server/api"
 	"skill-go/server/aura"
@@ -20,7 +23,7 @@ import (
 
 func main() {
 	cli := flag.Bool("cli", false, "run in CLI demo mode instead of HTTP server")
-	port := flag.String("port", ":8080", "HTTP listen address")
+	port := flag.String("port", ":13001", "HTTP listen address")
 	flag.Parse()
 
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
@@ -37,11 +40,32 @@ func main() {
 // ---------------------------------------------------------------------------
 
 func runHTTPServer(addr string) {
-	gs := api.NewGameState()
+	// Create file sink for spell trace logging
+	fileSink, err := trace.NewFileSink("server/log")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: file logging disabled: %v\n", err)
+	}
+
+	gs := api.NewGameState(fileSink)
 	srv := api.NewServer(addr, gs)
 	fmt.Printf("=== skill-go Spell Demo ===\n")
-	fmt.Printf("Open http://localhost%s in your browser\n\n", addr)
-	if err := srv.ListenAndServe(); err != nil {
+	fmt.Printf("Open http://localhost%s in your browser\n", addr)
+	fmt.Printf("Trace log: server/log/trace-*.log\n")
+	fmt.Printf("SSE stream: http://localhost%s/api/trace/stream\n\n", addr)
+
+	// Graceful shutdown
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		fmt.Println("\nShutting down...")
+		if fileSink != nil {
+			fileSink.Close()
+		}
+		srv.Close()
+	}()
+
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
 		os.Exit(1)
 	}

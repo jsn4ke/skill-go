@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +11,7 @@ import (
 
 func setupTestServer(t *testing.T) (*httptest.Server, *GameState) {
 	t.Helper()
-	gs := NewGameState()
+	gs := NewGameState(nil)
 	srv := NewServer(":0", gs)
 	ts := httptest.NewServer(srv.Handler)
 	t.Cleanup(func() { ts.Close() })
@@ -143,34 +144,34 @@ func TestUnits_ReturnsAllUnits(t *testing.T) {
 }
 
 // 2.5 GET /api/trace — returns event list after cast
+// Note: recorder is reset after each cast, so trace endpoint returns empty.
+// Events are available in the cast response instead.
 func TestTrace_EventsAfterCast(t *testing.T) {
 	ts, _ := setupTestServer(t)
 
-	// Cast a spell to generate events
 	body := map[string]interface{}{
 		"spellID":   1001,
 		"targetIDs": []uint64{3},
 	}
 	resp := postJSON(t, ts.URL+"/api/cast", body)
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	var events []TraceEventJSON
-	getJSON(t, ts.URL+"/api/trace", &events)
+	var result CastResponse
+	json.NewDecoder(resp.Body).Decode(&result)
 
-	if len(events) == 0 {
-		t.Fatal("expected trace events after cast")
+	if len(result.Events) == 0 {
+		t.Fatal("expected trace events in cast response")
 	}
 
-	// Verify at least a "prepare" event exists
 	found := false
-	for _, e := range events {
+	for _, e := range result.Events {
 		if e.Span == "spell" && e.Event == "prepare" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("missing spell.prepare event in trace")
+		t.Error("missing spell.prepare event in cast response")
 	}
 }
 
@@ -273,5 +274,173 @@ func TestCORS_HeadersPresent(t *testing.T) {
 
 	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
 		t.Error("missing CORS header")
+	}
+}
+
+// --- Unit Management API Tests ---
+
+func TestAddUnit_Success(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	body := map[string]interface{}{"name": "Goblin", "level": 30}
+	resp := postJSON(t, ts.URL+"/api/units/add", body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var units []UnitJSON
+	json.NewDecoder(resp.Body).Decode(&units)
+
+	if len(units) != 4 {
+		t.Fatalf("expected 4 units after add, got %d", len(units))
+	}
+
+	// Find the goblin
+	found := false
+	for _, u := range units {
+		if u.Name == "Goblin" {
+			found = true
+			if u.Level != 30 {
+				t.Errorf("expected level 30, got %d", u.Level)
+			}
+			if u.Health <= 0 {
+				t.Error("expected positive HP")
+			}
+		}
+	}
+	if !found {
+		t.Error("Goblin not found in unit list")
+	}
+}
+
+func TestAddUnit_Defaults(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	body := map[string]interface{}{}
+	resp := postJSON(t, ts.URL+"/api/units/add", body)
+	defer resp.Body.Close()
+
+	var units []UnitJSON
+	json.NewDecoder(resp.Body).Decode(&units)
+
+	// Should have 4 units (3 original + 1 new)
+	if len(units) != 4 {
+		t.Fatalf("expected 4 units, got %d", len(units))
+	}
+
+	// Find the new unit (last one)
+	newUnit := units[3]
+	if newUnit.Name != "Unknown" {
+		t.Errorf("expected default name 'Unknown', got %s", newUnit.Name)
+	}
+	if newUnit.Level != 60 {
+		t.Errorf("expected default level 60, got %d", newUnit.Level)
+	}
+}
+
+func TestRemoveUnit_Success(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	// Add a unit first
+	addBody := map[string]interface{}{"name": "Temp", "level": 1}
+	addResp := postJSON(t, ts.URL+"/api/units/add", addBody)
+	addResp.Body.Close()
+
+	// Get the new unit's GUID
+	var unitsBefore []UnitJSON
+	getJSON(t, ts.URL+"/api/units", &unitsBefore)
+	var tempGUID uint64
+	for _, u := range unitsBefore {
+		if u.Name == "Temp" {
+			tempGUID = u.GUID
+			break
+		}
+	}
+	if tempGUID == 0 {
+		t.Fatal("Temp unit not found")
+	}
+
+	// Remove it via DELETE
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+fmt.Sprintf("/api/units/%d", tempGUID), nil)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var unitsAfter []UnitJSON
+	getJSON(t, ts.URL+"/api/units", &unitsAfter)
+	if len(unitsAfter) != 3 {
+		t.Errorf("expected 3 units after removal, got %d", len(unitsAfter))
+	}
+}
+
+func TestRemoveUnit_CannotRemoveCaster(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/units/1", nil)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+
+	var errResp map[string]string
+	json.NewDecoder(resp.Body).Decode(&errResp)
+	if errResp["error"] != "cannot remove caster" {
+		t.Errorf("expected 'cannot remove caster' error, got %s", errResp["error"])
+	}
+}
+
+func TestMoveUnit_Success(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	body := map[string]interface{}{"guid": 1.0, "x": 15.0, "z": 5.0}
+	resp := postJSON(t, ts.URL+"/api/units/move", body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var units []UnitJSON
+	json.NewDecoder(resp.Body).Decode(&units)
+
+	// Find the caster
+	for _, u := range units {
+		if u.GUID == 1 {
+			if u.Position.X != 15.0 {
+				t.Errorf("expected X=15, got %v", u.Position.X)
+			}
+			if u.Position.Z != 5.0 {
+				t.Errorf("expected Z=5, got %v", u.Position.Z)
+			}
+			return
+		}
+	}
+	t.Error("caster not found")
+}
+
+func TestMoveUnit_NotFound(t *testing.T) {
+	ts, _ := setupTestServer(t)
+
+	body := map[string]interface{}{"guid": 99999.0, "x": 0.0, "z": 0.0}
+	resp := postJSON(t, ts.URL+"/api/units/move", body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for non-existent unit, got %d", resp.StatusCode)
 	}
 }
