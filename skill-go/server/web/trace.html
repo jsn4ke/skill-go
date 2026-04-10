@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spell Trace Viewer</title>
+  <link rel="stylesheet" href="/trace.css">
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar">
+      <div class="toolbar-left">
+        <h1>Spell Trace Viewer</h1>
+        <div id="conn-status" class="conn-dot disconnected" title="Disconnected"></div>
+      </div>
+      <div class="toolbar-right">
+        <button id="btn-refresh" class="toolbar-btn">Refresh</button>
+        <button id="btn-clear" class="toolbar-btn danger">Clear</button>
+      </div>
+    </header>
+
+    <div id="span-filters">
+      <span class="filter-label">Spans:</span>
+      <button class="span-btn active" data-span="all">All</button>
+      <button class="span-btn" data-span="spell">spell</button>
+      <button class="span-btn" data-span="checkcast">checkcast</button>
+      <button class="span-btn" data-span="cooldown">cooldown</button>
+      <button class="span-btn" data-span="effect_launch">effect_launch</button>
+      <button class="span-btn" data-span="effect_hit">effect_hit</button>
+      <button class="span-btn" data-span="aura">aura</button>
+      <button class="span-btn" data-span="combat">combat</button>
+      <button class="span-btn" data-span="proc">proc</button>
+      <button class="span-btn" data-span="targeting">targeting</button>
+      <button class="span-btn" data-span="script">script</button>
+    </div>
+
+    <div id="stats-bar">
+      <span id="stat-flows">Flows: 0</span>
+      <span id="stat-events">Events: 0</span>
+      <span id="stat-shown">Shown: 0</span>
+    </div>
+
+    <div id="trace-table">
+      <div id="table-header" class="table-row header-row">
+        <span class="col-time">Time</span>
+        <span class="col-span">Span</span>
+        <span class="col-event">Event</span>
+        <span class="col-spell">Spell</span>
+        <span class="col-fields">Fields</span>
+      </div>
+      <div id="table-body"></div>
+    </div>
+  </div>
+
+  <script src="/trace.js"></script>
+</body>
+</html>
