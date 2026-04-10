@@ -498,10 +498,14 @@ function renderAuras(auras) {
   // Clear any existing countdown timer
   if (auraCountdownTimer) { clearInterval(auraCountdownTimer); auraCountdownTimer = null; }
 
-  if (!auras.length) { container.innerHTML = ''; return; }
+  if (!auras.length) {
+    container.innerHTML = '';
+    clearSelectedTargetAuraRings();
+    return;
+  }
 
   function buildRows() {
-    const now = performance.now();
+    const now = Date.now();
     return auras.map(a => {
       const elapsed = now - a.timerStart;
       const remaining = Math.max(0, (a.duration - elapsed) / 1000);
@@ -509,20 +513,38 @@ function renderAuras(auras) {
       const name = a.name || (sp ? sp.name : `Spell#${a.spellID}`);
       const typeLabel = a.auraType === 0 ? 'Buff' : a.auraType === 1 ? 'Debuff' : 'Other';
       const typeClass = a.auraType === 0 ? 'buff' : a.auraType === 1 ? 'debuff' : 'other';
-      return `<div class="enemy-aura-row">
+      return { remaining, html: `<div class="enemy-aura-row">
         <span class="enemy-aura-type ${typeClass}">${typeLabel}</span>
         <span class="enemy-aura-name">${name}</span>
         <span class="enemy-aura-time">${remaining.toFixed(1)}s</span>
-      </div>`;
-    }).join('');
+      </div>` };
+    });
   }
 
-  container.innerHTML = buildRows();
+  container.innerHTML = buildRows().map(r => r.html).join('');
 
   // Refresh countdown every 200ms
   auraCountdownTimer = setInterval(() => {
-    container.innerHTML = buildRows();
+    const rows = buildRows();
+    const activeRows = rows.filter(r => r.remaining > 0);
+    if (activeRows.length === 0) {
+      clearInterval(auraCountdownTimer);
+      auraCountdownTimer = null;
+      container.innerHTML = '';
+      clearSelectedTargetAuraRings();
+      // Re-fetch units to sync server state
+      apiGet('/api/units').then(units => {
+        if (units) reconcileUnits(units);
+      }).catch(() => {});
+      return;
+    }
+    container.innerHTML = activeRows.map(r => r.html).join('');
   }, 200);
+}
+
+function clearSelectedTargetAuraRings() {
+  const group = characters.find(c => c.userData.guid == selectedTargetGUID);
+  if (group) clearAuraRings(group);
 }
 
 function hpTier(pct) { return pct < 25 ? 'low' : pct < 50 ? 'medium' : 'high'; }

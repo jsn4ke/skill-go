@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 	"net/http"
 	"strings"
 	"sync"
@@ -346,10 +347,15 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 	}
 	var auraList []AuraJSON
 	if auraMgr != nil {
+		now := time.Now().UnixMilli()
 		for _, a := range auraMgr.Auras {
 			timerStart := int64(0)
 			if len(a.Applications) > 0 {
 				timerStart = a.Applications[len(a.Applications)-1].TimerStart
+			}
+			// Skip expired auras
+			if a.Duration > 0 && timerStart > 0 && (now-timerStart) >= int64(a.Duration) {
+				continue
 			}
 			auraList = append(auraList, AuraJSON{
 				SpellID:    a.SpellID,
