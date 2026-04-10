@@ -19,20 +19,18 @@ export function spawnProjectile(fromGroup, toGroup, schoolName) {
   const scene = getScene();
   const color = SCHOOL_COLORS[schoolName] || 0xff4400;
 
-  const from = fromGroup.position.clone();
-  from.y = 2.5;
-  const to = toGroup.position.clone();
-  to.y = 2.5;
-
-  // Glowing sphere
-  const geo = new THREE.SphereGeometry(0.4, 8, 8);
-  const mat = new THREE.MeshBasicMaterial({ color });
+  // Glowing sphere — fog:false prevents scene FogExp2 from hiding it
+  const geo = new THREE.SphereGeometry(0.8, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, fog: false });
   const sphere = new THREE.Mesh(geo, mat);
-  sphere.position.copy(from);
+  sphere.position.copy(fromGroup.position);
+  sphere.position.y = 2.5;
+  sphere.renderOrder = 999;
+  sphere.material.depthTest = false;
   scene.add(sphere);
 
-  // Point light
-  const light = new THREE.PointLight(color, 2, 8);
+  // Point light — brighter and wider range
+  const light = new THREE.PointLight(color, 4, 12);
   sphere.add(light);
 
   // Trail particles
@@ -42,11 +40,17 @@ export function spawnProjectile(fromGroup, toGroup, schoolName) {
 
   const startTime = performance.now();
   const duration = 600;
+  const from = fromGroup.position.clone();
 
   const obj = {
     update(dt) {
       const elapsed = performance.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
+
+      // Track live target position
+      const to = toGroup.position.clone();
+      to.y = 2.5;
+      from.y = 2.5;
 
       // Move along path (slight arc)
       sphere.position.lerpVectors(from, to, t);
@@ -55,7 +59,7 @@ export function spawnProjectile(fromGroup, toGroup, schoolName) {
       // Spawn trail particles
       if (Math.random() < 0.6) {
         const pGeo = new THREE.SphereGeometry(0.1, 4, 4);
-        const pMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8 });
+        const pMat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, fog: false });
         const p = new THREE.Mesh(pGeo, pMat);
         p.position.copy(sphere.position);
         p.position.x += (Math.random() - 0.5) * 0.5;
@@ -181,10 +185,7 @@ export function spawnDamageNumber(targetGroup, value, result) {
   div.textContent = displayText;
 
   const label = new CSS2DObject(div);
-  const pos = targetGroup.position.clone();
-  pos.y = 4;
-  pos.x += (Math.random() - 0.5) * 2;
-  label.position.copy(pos);
+  label.position.set((Math.random() - 0.5) * 2, 4, 0);
   targetGroup.add(label);
 
   const startTime = performance.now();
@@ -215,10 +216,7 @@ export function spawnHealNumber(targetGroup, value) {
   div.textContent = '+' + Math.abs(Math.round(value));
 
   const label = new CSS2DObject(div);
-  const pos = targetGroup.position.clone();
-  pos.y = 4;
-  pos.x += (Math.random() - 0.5) * 2;
-  label.position.copy(pos);
+  label.position.set((Math.random() - 0.5) * 2, 4, 0);
   targetGroup.add(label);
 
   const startTime = performance.now();
@@ -260,27 +258,19 @@ export function flashHit(targetGroup) {
 // ---- Heal beam ----
 export function spawnHealBeam(fromGroup, toGroup) {
   const scene = getScene();
-  const from = fromGroup.position.clone();
-  from.y = 2;
-  const to = toGroup.position.clone();
-  to.y = 2;
 
-  const points = [from, to];
+  const points = [
+    fromGroup.position.clone().setY(2),
+    toGroup.position.clone().setY(2),
+  ];
   const geo = new THREE.BufferGeometry().setFromPoints(points);
   const mat = new THREE.LineBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.8, linewidth: 2 });
   const line = new THREE.Line(geo, mat);
   scene.add(line);
 
-  // Also add glowing cylinder along the beam
-  const dir = to.clone().sub(from);
-  const len = dir.length();
-  const mid = from.clone().add(to).multiplyScalar(0.5);
-  const cylGeo = new THREE.CylinderGeometry(0.15, 0.15, len, 6);
+  const cylGeo = new THREE.CylinderGeometry(0.15, 0.15, 1, 6);
   const cylMat = new THREE.MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.4 });
   const cyl = new THREE.Mesh(cylGeo, cylMat);
-  cyl.position.copy(mid);
-  cyl.lookAt(to);
-  cyl.rotateX(Math.PI / 2);
   scene.add(cyl);
 
   const startTime = performance.now();
@@ -299,6 +289,26 @@ export function spawnHealBeam(fromGroup, toGroup) {
         cylMat.dispose();
         return;
       }
+
+      // Track live positions
+      const from = fromGroup.position.clone().setY(2);
+      const to = toGroup.position.clone().setY(2);
+
+      const positions = line.geometry.attributes.position;
+      positions.setXYZ(0, from.x, from.y, from.z);
+      positions.setXYZ(1, to.x, to.y, to.z);
+      positions.needsUpdate = true;
+
+      const dir = to.clone().sub(from);
+      const len = dir.length();
+      if (len > 0.01) {
+        const mid = from.clone().add(to).multiplyScalar(0.5);
+        cyl.position.copy(mid);
+        cyl.scale.set(1, len, 1);
+        cyl.lookAt(to);
+        cyl.rotateX(Math.PI / 2);
+      }
+
       mat.opacity = 0.8 * (1 - t);
       cylMat.opacity = 0.4 * (1 - t);
     },
@@ -376,4 +386,69 @@ export function clearAuraRings(targetGroup) {
     ring.material.dispose();
   }
   targetGroup.userData.auraRings = [];
+}
+
+// ---- Selection ring ----
+let selectionRingMesh = null;
+let selectionRingTarget = null;
+
+export function createSelectionRing(unitGroup, isEnemy) {
+  removeSelectionRing();
+
+  const color = isEnemy ? 0xff3333 : 0x33ff33;
+  const geo = new THREE.RingGeometry(1.2, 1.5, 32);
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
+  });
+  selectionRingMesh = new THREE.Mesh(geo, mat);
+  selectionRingMesh.rotation.x = -Math.PI / 2;
+
+  const pos = unitGroup.position.clone();
+  pos.y = 0.05;
+  selectionRingMesh.position.copy(pos);
+
+  addToScene(selectionRingMesh);
+  selectionRingTarget = unitGroup;
+
+  // Rotation animation
+  const obj = {
+    update() {
+      if (!selectionRingMesh) {
+        removeUpdatable(obj);
+        return;
+      }
+      selectionRingMesh.rotation.z += 0.02;
+      // Pulse opacity
+      selectionRingMesh.material.opacity = 0.5 + 0.3 * Math.sin(performance.now() * 0.005);
+    },
+  };
+  addUpdatable(obj);
+  selectionRingMesh.userData.updatable = obj;
+}
+
+export function updateSelectionRingPosition() {
+  if (!selectionRingMesh || !selectionRingTarget) return;
+  const pos = selectionRingTarget.position.clone();
+  pos.y = 0.05;
+  selectionRingMesh.position.copy(pos);
+}
+
+export function removeSelectionRing() {
+  if (!selectionRingMesh) return;
+
+  if (selectionRingMesh.userData.updatable) {
+    removeUpdatable(selectionRingMesh.userData.updatable);
+  }
+  removeFromScene(selectionRingMesh);
+  selectionRingMesh.geometry.dispose();
+  selectionRingMesh.material.dispose();
+  selectionRingMesh = null;
+  selectionRingTarget = null;
+}
+
+export function getSelectionRingTarget() {
+  return selectionRingTarget;
 }

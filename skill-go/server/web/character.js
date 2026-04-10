@@ -1,4 +1,4 @@
-// character.js — 3D character models, nameplates, HP/MP bars
+// character.js — 3D character models, nameplates, HP/MP bars, movement
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { addToScene, removeFromScene } from './scene.js';
@@ -7,6 +7,8 @@ const ROLE_COLORS = {
   'Mage': 0x4488ff,
   'Warrior': 0x8B6914,
   'Target Dummy': 0xcc3333,
+  'Elite': 0xff8800,
+  'Boss': 0xaa00ff,
 };
 
 function getRoleColor(name) {
@@ -42,11 +44,15 @@ export function createCharacter(unitData) {
 
   // Position
   const px = unitData.position?.X || 0;
-  const pz = unitData.position?.Y || 0;
+  const pz = unitData.position?.Z || 0;
   group.position.set(px, 0, pz);
 
-  // Store refs
-  group.userData = { guid: unitData.guid, name: unitData.name, bodyMat, headMat, body, head };
+  // Store refs + unit data for HUD lookups
+  group.userData = {
+    guid: unitData.guid, name: unitData.name, bodyMat, headMat, body, head,
+    targetPosition: null, isMoving: false,
+    unitData: { ...unitData },
+  };
 
   // Nameplate
   const nameDiv = document.createElement('div');
@@ -93,6 +99,7 @@ export function createCharacter(unitData) {
 export function updateCharacter(group, unitData) {
   if (!group) return;
   const d = group.userData;
+  d.unitData = { ...unitData };
 
   // Update HP bar — access DOM through barLabel.element
   const barEl = d.barLabel?.element;
@@ -128,9 +135,67 @@ export function updateCharacter(group, unitData) {
     group.rotation.z = 0;
     group.position.y = 0;
   }
+
+  // Update server position (if not moving, snap to server position)
+  if (!d.isMoving && unitData.position) {
+    group.position.x = unitData.position.X;
+    group.position.z = unitData.position.Z || 0;
+  }
 }
 
 export function removeCharacter(group) {
   if (!group) return;
+  // Remove CSS2D objects (nameplate, HP bars, etc.) — their DOM elements
+  // persist in the CSS2DRenderer container even after the group is removed from the scene
+  group.traverse(child => {
+    if (child.isCSS2DObject && child.element && child.element.parentNode) {
+      child.element.parentNode.removeChild(child.element);
+    }
+  });
   removeFromScene(group);
+}
+
+// ---- Movement ----
+
+const MOVE_SPEED = 10; // units per second
+
+// Set target position for smooth movement
+export function moveUnit(group, x, z) {
+  if (!group) return;
+  group.userData.targetPosition = new THREE.Vector3(x, 0, z);
+  group.userData.isMoving = true;
+}
+
+// Update movement interpolation — call from animation loop
+export function updateUnitMovement(group, dt) {
+  const d = group.userData;
+  if (!d.isMoving || !d.targetPosition) return;
+
+  const target = d.targetPosition;
+  const current = group.position;
+  const dx = target.x - current.x;
+  const dz = target.z - current.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+
+  if (dist < 0.1) {
+    // Snap to target
+    current.x = target.x;
+    current.z = target.z;
+    d.targetPosition = null;
+    d.isMoving = false;
+    return;
+  }
+
+  const step = MOVE_SPEED * dt;
+  const ratio = Math.min(step / dist, 1);
+  current.x += dx * ratio;
+  current.z += dz * ratio;
+}
+
+// Collect all raycastable meshes from a character group (body + head)
+export function getCharacterMeshes(group) {
+  const meshes = [];
+  if (group.userData.body) meshes.push(group.userData.body);
+  if (group.userData.head) meshes.push(group.userData.head);
+  return meshes;
 }

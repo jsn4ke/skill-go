@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>skill-go 3D Battle Demo</title>
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=6">
   <script type="importmap">
   {
     "imports": {
@@ -18,22 +18,144 @@
   <div id="canvas-container"></div>
 
   <div id="hud">
+    <!-- Spell log (top-left, client-side visual log) -->
+    <div id="spell-log" class="hud-panel scrollable">
+      <div class="panel-title-bar">
+        <span class="panel-title-text">Spell Log</span>
+        <span class="panel-collapse-btn">&minus;</span>
+      </div>
+      <div class="panel-body">
+        <div id="spell-log-entries"></div>
+      </div>
+    </div>
+
+    <!-- Self panel (left) -->
+    <div id="self-panel" class="hud-panel">
+      <div class="panel-title-bar">
+        <span class="panel-title-text">Self</span>
+        <span class="panel-collapse-btn">&minus;</span>
+      </div>
+      <div class="panel-body">
+        <div id="self-name" class="panel-name">Mage</div>
+        <div id="self-level" class="panel-level">Lv60</div>
+        <div class="panel-bar-row">
+          <span class="panel-bar-label">HP</span>
+          <div class="panel-bar-track"><div id="self-hp-bar" class="panel-bar-fill hp-high"></div></div>
+          <span id="self-hp-val" class="panel-bar-val">5000/5000</span>
+        </div>
+        <div class="panel-bar-row">
+          <span class="panel-bar-label">MP</span>
+          <div class="panel-bar-track"><div id="self-mp-bar" class="panel-bar-fill mp-high"></div></div>
+          <span id="self-mp-val" class="panel-bar-val">20000/20000</span>
+        </div>
+        <div id="self-stats" class="panel-stats">
+          <span>SP: <span id="self-sp">500</span></span>
+          <span>Crit: <span id="self-crit">20%</span></span>
+          <span>Hit: <span id="self-hit">100%</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spawn panel (left, below self) -->
+    <div id="spawn-panel" class="hud-panel">
+      <div class="panel-title-bar">
+        <span class="panel-title-text">Manage</span>
+        <span class="panel-collapse-btn">&minus;</span>
+      </div>
+      <div class="panel-body">
+        <div class="spawn-row">
+          <span class="spawn-label">Level</span>
+          <button class="spawn-sm-btn" onclick="window.__adjustLevel(-1)">-</button>
+          <span id="spawn-level-display" class="spawn-level-val">60</span>
+          <button class="spawn-sm-btn" onclick="window.__adjustLevel(1)">+</button>
+        </div>
+        <button class="spawn-btn" onclick="window.__spawnUnit('Target Dummy')">+ Dummy</button>
+        <button class="spawn-btn spawn-elite" onclick="window.__spawnUnit('Elite')">+ Elite</button>
+        <button class="spawn-btn spawn-boss" onclick="window.__spawnUnit('Boss')">+ Boss</button>
+        <button class="spawn-btn spawn-remove" onclick="window.__removeSelectedTarget()">Remove</button>
+      </div>
+    </div>
+
+    <!-- Enemy panel (right) -->
+    <div id="enemy-panel" class="hud-panel">
+      <div class="panel-title-bar">
+        <span class="panel-title-text">Target</span>
+        <span class="panel-collapse-btn">&minus;</span>
+      </div>
+      <div class="panel-body">
+        <select id="enemy-select" class="enemy-dropdown">
+          <option value="">-- Select Target --</option>
+        </select>
+        <div id="enemy-info" class="hidden" hidden>
+          <div id="enemy-name" class="panel-name">No Target</div>
+          <div id="enemy-level" class="panel-level"></div>
+          <div class="panel-bar-row">
+            <span class="panel-bar-label">HP</span>
+            <div class="panel-bar-track"><div id="enemy-hp-bar" class="panel-bar-fill hp-high"></div></div>
+            <span id="enemy-hp-val" class="panel-bar-val">&mdash;</span>
+          </div>
+          <div id="enemy-stats" class="panel-stats">
+            <span>Armor: <span id="enemy-armor">0</span></span>
+            <span>Fire: <span id="enemy-fire">0</span></span>
+            <span>Frost: <span id="enemy-frost">0</span></span>
+            <span>Shadow: <span id="enemy-shadow">0</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Spell Trace Log (bottom-left) -->
+    <div id="server-log-panel" class="hud-panel scrollable">
+      <div class="panel-title-bar">
+        <span class="panel-title-text">Server Trace</span>
+        <span class="panel-collapse-btn">&minus;</span>
+      </div>
+      <div class="panel-body">
+        <div id="server-log-entries"></div>
+      </div>
+    </div>
+
+    <!-- Stats panel (top-right) -->
     <div id="stats-panel">
       <span>Casts: <strong id="stat-casts">0</strong></span>
       <span>Damage: <strong id="stat-damage">0</strong></span>
       <span>Healing: <strong id="stat-healing">0</strong></span>
       <span>Crits: <strong id="stat-crits">0</strong></span>
-      <span>Misses: <strong id="stat-misses">0</strong></span>
       <span>Crit%: <strong id="stat-critrate">0%</strong></span>
     </div>
+
+    <!-- Targeting indicator (top-center) -->
+    <div id="targeting-indicator" class="hidden">
+      <span>Select target for <span id="targeting-spell">Fireball</span>...</span>
+      <button class="cancel-btn" onclick="window.__cancelTargeting()">ESC</button>
+    </div>
+
+    <!-- Target lock frame (below targeting indicator) -->
+    <div id="target-lock" class="hidden" hidden>
+      <div id="target-lock-portrait">
+        <div id="target-lock-portrait-icon"></div>
+      </div>
+      <div id="target-lock-info">
+        <div id="target-lock-name">No Target</div>
+        <div id="target-lock-level"></div>
+        <div id="target-lock-hp-row">
+          <span id="target-lock-hp-text">0/0</span>
+          <div class="target-lock-hp-track"><div id="target-lock-hp-bar" class="target-lock-hp-fill hp-high"></div></div>
+        </div>
+      </div>
+      <button id="target-lock-cancel" onclick="window.__deselectTarget()">X</button>
+    </div>
+
+    <!-- Action bar (bottom-center) -->
     <div id="action-bar">
       <div id="spell-buttons"></div>
       <div id="action-buttons">
+        <button id="btn-theme" class="action-btn" onclick="window.__toggleTheme()">Light</button>
         <button id="btn-reset" class="action-btn" onclick="window.__resetSession()">Reset</button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/app.js?v=6"></script>
 </body>
 </html>

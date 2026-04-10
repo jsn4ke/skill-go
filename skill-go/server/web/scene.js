@@ -1,9 +1,13 @@
-// scene.js — Three.js scene, camera, lighting, ground, render loop
+// scene.js — Three.js scene, camera, lighting, ground, render loop, raycasting
 import * as THREE from 'three';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 
 let scene, camera, renderer, labelRenderer;
+let groundPlane; // invisible plane for ground-click detection
+let gridHelper, floorMesh; // theme-updatable objects
 const updatables = [];
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
 
 export function initScene() {
   // Scene
@@ -63,21 +67,29 @@ export function initScene() {
   scene.add(dirLight);
 
   // Ground grid
-  const grid = new THREE.GridHelper(80, 40, 0x333355, 0x222244);
-  scene.add(grid);
+  gridHelper = new THREE.GridHelper(80, 40, 0x333355, 0x222244);
+  scene.add(gridHelper);
 
-  // Ground plane (semi-transparent floor)
+  // Ground plane (semi-transparent floor) — also used for raycasting
   const floorGeo = new THREE.PlaneGeometry(80, 80);
   const floorMat = new THREE.MeshStandardMaterial({
     color: 0x111122,
     transparent: true,
     opacity: 0.5,
   });
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(20, -0.01, 0);
-  floor.receiveShadow = true;
-  scene.add(floor);
+  floorMesh = new THREE.Mesh(floorGeo, floorMat);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.position.set(20, -0.01, 0);
+  floorMesh.receiveShadow = true;
+  scene.add(floorMesh);
+
+  // Invisible ground plane for raycasting (larger area, always at Y=0)
+  const groundGeo = new THREE.PlaneGeometry(200, 200);
+  const groundMat = new THREE.MeshBasicMaterial({ visible: false });
+  groundPlane = new THREE.Mesh(groundGeo, groundMat);
+  groundPlane.rotation.x = -Math.PI / 2;
+  groundPlane.position.set(0, 0, 0);
+  scene.add(groundPlane);
 
   // Resize handler
   window.addEventListener('resize', onResize);
@@ -110,6 +122,8 @@ function animate() {
 
 export function getScene() { return scene; }
 export function getCamera() { return camera; }
+export function getGroundPlane() { return groundPlane; }
+export function getGridAndFloor() { return { gridHelper, floorMesh }; }
 
 export function addUpdatable(obj) {
   const idx = updatables.indexOf(obj);
@@ -127,4 +141,41 @@ export function addToScene(obj) {
 
 export function removeFromScene(obj) {
   scene.remove(obj);
+}
+
+// ---- Raycasting ----
+
+// Set mouse coordinates from a click event (NDC: -1 to 1)
+export function setMouseFromEvent(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+// Raycast against character meshes. Returns { group, point } or null.
+// characterMeshes: flat array of all THREE.Mesh objects from character groups
+export function raycastCharacters(characterMeshes) {
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(characterMeshes, false);
+  if (intersects.length === 0) return null;
+
+  // Walk up to find the character Group (parent of body/head)
+  const hit = intersects[0];
+  let obj = hit.object;
+  while (obj.parent && !obj.userData.guid) {
+    obj = obj.parent;
+  }
+  if (!obj.userData.guid) return null;
+
+  return { group: obj, point: hit.point };
+}
+
+// Raycast against ground plane. Returns world point {x, z} or null.
+export function raycastGround() {
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(groundPlane, false);
+  if (intersects.length === 0) return null;
+
+  const p = intersects[0].point;
+  return { x: p.x, z: p.z };
 }
