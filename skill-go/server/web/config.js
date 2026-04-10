@@ -1,0 +1,220 @@
+// config.js — Spell Config Editor page logic
+
+let spells = []; // current spell data from server
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadSpells();
+});
+
+// ---- API ----
+async function loadSpells() {
+  try {
+    const resp = await fetch('/api/spells');
+    spells = await resp.json();
+    render();
+  } catch (e) {
+    showFeedback('Failed to load spells: ' + e.message, 'error');
+  }
+}
+
+async function applySpell(id) {
+  const card = document.querySelector(`.spell-card[data-id="${id}"]`);
+  if (!card) return;
+
+  const data = buildRequest(id, card);
+
+  try {
+    const resp = await fetch(`/api/spells/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (resp.ok) {
+      showFeedback(`Spell #${id} updated`, 'success');
+    } else {
+      const err = await resp.json();
+      showFeedback(err.error || 'Update failed', 'error');
+    }
+  } catch (e) {
+    showFeedback('Request failed: ' + e.message, 'error');
+  }
+}
+
+// ---- Build request from form ----
+function buildRequest(id, card) {
+  const data = {
+    name: card.querySelector('.field-name').value,
+    castTime: parseInt(card.querySelector('.field-castTime').value) || 0,
+    cooldown: parseInt(card.querySelector('.field-cd').value) || 0,
+    categoryCD: parseInt(card.querySelector('.field-catCD').value) || 0,
+    powerCost: parseInt(card.querySelector('.field-power').value) || 0,
+    maxTargets: parseInt(card.querySelector('.field-maxTargets').value) || 1,
+  };
+
+  const effectBlocks = card.querySelectorAll('.effect-block');
+  data.effects = [];
+  effectBlocks.forEach((block, i) => {
+    const bp = block.querySelector('.eff-bp');
+    const coef = block.querySelector('.eff-coef');
+    const wp = block.querySelector('.eff-wp');
+    const ad = block.querySelector('.eff-ad');
+    const at = block.querySelector('.eff-at');
+    if (bp) {
+      data.effects.push({
+        effectIndex: i,
+        basePoints: parseInt(bp.value) || 0,
+        coef: coef ? parseFloat(coef.value) || 0 : 0,
+        weaponPercent: wp ? parseFloat(wp.value) || 0 : 0,
+        auraDuration: ad ? parseInt(ad.value) || 0 : 0,
+        auraType: at ? parseInt(at.value) || 0 : 0,
+      });
+    }
+  });
+
+  return data;
+}
+
+// ---- Rendering ----
+function render() {
+  const container = document.getElementById('spell-list');
+  container.innerHTML = '';
+
+  for (const spell of spells) {
+    const card = document.createElement('div');
+    card.className = 'spell-card';
+    card.dataset.id = spell.id;
+
+    const effectsSummary = spell.effectsDetail
+      ? spell.effectsDetail.map(e => e.effectType).join(', ')
+      : spell.effects.join(', ');
+
+    card.innerHTML = `
+      <div class="spell-header">
+        <div>
+          <span class="spell-name">${escHtml(spell.name)}</span>
+          <span class="spell-id">#${spell.id}</span>
+          <span class="school-badge ${escAttr(spell.schoolName)}">${escHtml(spell.schoolName)}</span>
+        </div>
+        <div>
+          <span class="spell-summary">CD: ${spell.cd}ms | Mana: ${spell.powerCost}</span>
+          <span class="spell-toggle">&#9654;</span>
+        </div>
+      </div>
+      <div class="spell-body">
+        <div class="form-row">
+          <label>Name</label>
+          <input type="text" class="field-name" value="${escAttr(spell.name)}">
+        </div>
+        <div class="form-row">
+          <label>Cast Time</label>
+          <input type="number" class="field-castTime" value="${spell.castTime}">
+          <span class="unit">ms</span>
+        </div>
+        <div class="form-row">
+          <label>Cooldown</label>
+          <input type="number" class="field-cd" value="${spell.cd}">
+          <span class="unit">ms</span>
+        </div>
+        <div class="form-row">
+          <label>Category CD</label>
+          <input type="number" class="field-catCD" value="${spell.categoryCD}">
+          <span class="unit">ms</span>
+        </div>
+        <div class="form-row">
+          <label>Power Cost (Mana)</label>
+          <input type="number" class="field-power" value="${spell.powerCost}">
+        </div>
+        <div class="form-row">
+          <label>Max Targets</label>
+          <input type="number" class="field-maxTargets" value="${spell.maxTargets}">
+        </div>
+        ${renderEffects(spell)}
+        <div class="apply-row">
+          <button class="btn-apply">Apply</button>
+        </div>
+      </div>
+    `;
+
+    // Toggle expand
+    card.querySelector('.spell-header').addEventListener('click', () => {
+      const body = card.querySelector('.spell-body');
+      const toggle = card.querySelector('.spell-toggle');
+      body.classList.toggle('expanded');
+      toggle.classList.toggle('expanded');
+    });
+
+    // Apply button
+    card.querySelector('.btn-apply').addEventListener('click', () => {
+      applySpell(spell.id);
+    });
+
+    container.appendChild(card);
+  }
+}
+
+function renderEffects(spell) {
+  if (!spell.effectsDetail || spell.effectsDetail.length === 0) return '';
+
+  let html = '<div class="effect-section"><h3>Effects</h3>';
+
+  for (const eff of spell.effectsDetail) {
+    html += `
+      <div class="effect-block">
+        <div class="effect-type">#${eff.effectIndex} ${escHtml(eff.effectType)}</div>
+        <div class="form-row">
+          <label>Base Points</label>
+          <input type="number" class="eff-bp" value="${eff.basePoints}">
+        </div>
+        ${eff.coef !== 0 ? `
+        <div class="form-row">
+          <label>Coefficient</label>
+          <input type="number" step="0.1" class="eff-coef" value="${eff.coef}">
+        </div>
+        ` : ''}
+        ${eff.weaponPercent !== 0 ? `
+        <div class="form-row">
+          <label>Weapon %</label>
+          <input type="number" step="0.1" class="eff-wp" value="${eff.weaponPercent}">
+        </div>
+        ` : ''}
+        ${eff.auraDuration !== 0 ? `
+        <div class="form-row">
+          <label>Aura Duration</label>
+          <input type="number" class="eff-ad" value="${eff.auraDuration}">
+          <span class="unit">ms</span>
+        </div>
+        ` : ''}
+        ${eff.auraType !== 0 ? `
+        <div class="form-row">
+          <label>Aura Type</label>
+          <input type="number" class="eff-at" value="${eff.auraType}">
+        </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// ---- Feedback ----
+function showFeedback(msg, type) {
+  const container = document.getElementById('feedback');
+  const el = document.createElement('div');
+  el.className = 'feedback-msg ' + type;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+// ---- Helpers ----
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function escAttr(str) {
+  if (!str) return '';
+  return str.replace(/[^a-zA-Z0-9_]/g, '_');
+}

@@ -1,0 +1,227 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 12px;
+}
+
+/* Toolbar */
+#toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+  margin-bottom: 12px;
+}
+
+.toolbar-left h1 {
+  font-size: 16px;
+  color: #88aaff;
+}
+
+.toolbar-btn {
+  background: #2a2a4a;
+  color: #ccc;
+  border: 1px solid #444;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.toolbar-btn:hover { background: #3a3a5a; }
+.toolbar-btn.danger { color: #ff6666; border-color: #663333; }
+.toolbar-btn.danger:hover { background: #4a2a2a; }
+
+/* Spell cards */
+.spell-card {
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.spell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #22223a;
+  cursor: pointer;
+  user-select: none;
+}
+.spell-header:hover { background: #2a2a50; }
+
+.spell-header .spell-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.spell-header .spell-id {
+  color: #666;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.spell-header .spell-summary {
+  color: #888;
+  font-size: 12px;
+}
+
+.spell-header .spell-toggle {
+  color: #666;
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+.spell-header .spell-toggle.expanded {
+  transform: rotate(90deg);
+}
+
+/* Editor body */
+.spell-body {
+  display: none;
+  padding: 12px 14px;
+  background: #1e1e32;
+  border-top: 1px solid #2a2a3a;
+}
+
+.spell-body.expanded {
+  display: block;
+}
+
+/* Form layout */
+.form-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.form-row label {
+  width: 160px;
+  color: #889;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.form-row input, .form-row select {
+  background: #2a2a4a;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  width: 140px;
+}
+
+.form-row input:focus, .form-row select:focus {
+  border-color: #6666aa;
+  outline: none;
+}
+
+.form-row .unit {
+  color: #666;
+  font-size: 11px;
+  margin-left: 4px;
+  width: auto;
+}
+
+/* Effect section */
+.effect-section {
+  margin-top: 12px;
+  border-top: 1px solid #333;
+  padding-top: 10px;
+}
+
+.effect-section h3 {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.effect-block {
+  background: #252540;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.effect-block .effect-type {
+  font-weight: 600;
+  color: #bbddff;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+/* Apply button */
+.apply-row {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-apply {
+  background: #2a5a2a;
+  color: #88ff88;
+  border: 1px solid #448844;
+  padding: 6px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.btn-apply:hover { background: #3a7a3a; }
+
+/* School badge */
+.school-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+.school-badge.Fire    { background: #3a2a10; color: #ff8844; }
+.school-badge.Frost   { background: #1a2a3a; color: #44aaff; }
+.school-badge.Arcane  { background: #2a1a3a; color: #cc88ff; }
+.school-badge.Shadow  { background: #2a1a2a; color: #aa66cc; }
+.school-badge.Nature  { background: #1a3a2a; color: #44cc44; }
+.school-badge.Holy    { background: #3a3a1a; color: #ffcc44; }
+.school-badge.Physical { background: #2a2a1a; color: #ccaa44; }
+
+/* Feedback */
+#feedback {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 100;
+}
+
+.feedback-msg {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-top: 8px;
+  animation: fadeOut 2s ease forwards;
+}
+.feedback-msg.success { background: #2a5a2a; color: #88ff88; }
+.feedback-msg.error   { background: #5a2a2a; color: #ff8888; }
+
+@keyframes fadeOut {
+  0%, 70% { opacity: 1; }
+  100%   { opacity: 0; }
+}

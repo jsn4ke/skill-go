@@ -77,6 +77,19 @@ type SpellJSON struct {
 	MaxTargets int      `json:"maxTargets"`
 	CategoryCD int32    `json:"categoryCD"`
 	Effects    []string `json:"effects"`
+	EffectsDetail []EffectDetailJSON `json:"effectsDetail"`
+}
+
+// EffectDetailJSON provides full effect parameters for the config editor.
+type EffectDetailJSON struct {
+	EffectIndex   int32   `json:"effectIndex"`
+	EffectType    string  `json:"effectType"`
+	SchoolMask    uint32  `json:"schoolMask"`
+	BasePoints    int32   `json:"basePoints"`
+	Coef          float64 `json:"coef"`
+	WeaponPercent float64 `json:"weaponPercent"`
+	AuraDuration  int32   `json:"auraDuration"`
+	AuraType      int32   `json:"auraType"`
 }
 
 // TraceEventJSON represents a trace event for the API.
@@ -385,15 +398,26 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 
 func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 	effectNames := make([]string, len(s.Effects))
+	effectDetails := make([]EffectDetailJSON, len(s.Effects))
 	for i, e := range s.Effects {
 		effectNames[i] = effectTypeName(e.EffectType)
+		effectDetails[i] = EffectDetailJSON{
+			EffectIndex:   int32(e.EffectIndex),
+			EffectType:    effectTypeName(e.EffectType),
+			SchoolMask:    uint32(e.SchoolMask),
+			BasePoints:    e.BasePoints,
+			Coef:          e.Coef,
+			WeaponPercent: e.WeaponPercent,
+			AuraDuration:  e.AuraDuration,
+			AuraType:      e.AuraType,
+		}
 	}
 	return SpellJSON{
 		ID: s.ID, Name: s.Name, SchoolMask: uint32(s.SchoolMask),
 		SchoolName: schoolName(s.SchoolMask), CastTime: s.CastTime,
 		CD: s.RecoveryTime, PowerCost: s.PowerCost,
 		MaxTargets: s.MaxTargets, CategoryCD: s.CategoryRecoveryTime,
-		Effects: effectNames,
+		Effects: effectNames, EffectsDetail: effectDetails,
 	}
 }
 
@@ -984,11 +1008,88 @@ func handleReset(gs *GameState) http.HandlerFunc {
 	}
 }
 
+// UpdateSpellRequest is the JSON body for PUT /api/spells/{id}.
+type UpdateSpellRequest struct {
+	Name           string  `json:"name"`
+	CastTime       int32   `json:"castTime"`
+	RecoveryTime   int32   `json:"cooldown"`
+	CategoryRecoveryTime int32 `json:"categoryCD"`
+	PowerCost      int32   `json:"powerCost"`
+	MaxTargets     int      `json:"maxTargets"`
+	Effects        []UpdateEffectRequest `json:"effects"`
+}
+
+// UpdateEffectRequest is a single effect update.
+type UpdateEffectRequest struct {
+	EffectIndex   int     `json:"effectIndex"`
+	BasePoints    int32   `json:"basePoints"`
+	Coef          float64 `json:"coef"`
+	WeaponPercent float64 `json:"weaponPercent"`
+	AuraDuration  int32   `json:"auraDuration"`
+	AuraType      int32   `json:"auraType"`
+}
+
+func handleUpdateSpell(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		path := strings.TrimPrefix(r.URL.Path, "/api/spells/")
+		id, err := strconv.ParseUint(path, 10, 32)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid spell ID"})
+			return
+		}
+
+		var req UpdateSpellRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		spell := gs.FindSpell(uint32(id))
+		if spell == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": fmt.Sprintf("spell %d not found", id)})
+			return
+		}
+
+		// Update top-level fields
+		if req.Name != "" {
+			spell.Name = req.Name
+		}
+		spell.CastTime = req.CastTime
+		spell.RecoveryTime = req.RecoveryTime
+		spell.CategoryRecoveryTime = req.CategoryRecoveryTime
+		spell.PowerCost = req.PowerCost
+		spell.MaxTargets = req.MaxTargets
+
+		// Update effects
+		for _, ue := range req.Effects {
+			if ue.EffectIndex < 0 || ue.EffectIndex >= len(spell.Effects) {
+				continue
+			}
+			eff := &spell.Effects[ue.EffectIndex]
+			eff.BasePoints = ue.BasePoints
+			eff.Coef = ue.Coef
+			eff.WeaponPercent = ue.WeaponPercent
+			eff.AuraDuration = ue.AuraDuration
+			eff.AuraType = ue.AuraType
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
 // corsMiddleware adds CORS headers.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
@@ -1012,6 +1113,7 @@ func NewServer(addr string, gs *GameState) *http.Server {
 	mux.HandleFunc("/api/trace/stream", handleTraceStream(gs))
 	mux.HandleFunc("/api/trace/history", handleTraceHistory(gs))
 	mux.HandleFunc("/api/spells", handleSpells(gs))
+	mux.HandleFunc("/api/spells/", handleUpdateSpell(gs))
 	mux.HandleFunc("/api/reset", handleReset(gs))
 
 	handler := corsMiddleware(mux)
