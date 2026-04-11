@@ -1384,6 +1384,7 @@ func handleApiIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	routes := []map[string]string{
 		{"method": "GET",  "path": "/api",               "description": "List all API routes (this endpoint)"},
+		{"method": "GET",  "path": "/api/docs",          "description": "Spell system configuration reference"},
 		{"method": "POST", "path": "/api/cast",           "description": "Cast a spell (prepare phase for cast-time spells)"},
 		{"method": "POST", "path": "/api/cast/complete",  "description": "Complete a pending cast"},
 		{"method": "POST", "path": "/api/cast/cancel",    "description": "Cancel a pending cast"},
@@ -1408,6 +1409,7 @@ func handleApiIndex(w http.ResponseWriter, r *http.Request) {
 func NewServer(addr string, gs *GameState) *http.Server {
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/api/docs", handleDocs)
 	mux.HandleFunc("/api", handleApiIndex)
 	mux.HandleFunc("/api/cast", handleCast(gs))
 	mux.HandleFunc("/api/cast/complete", handleCastComplete(gs))
