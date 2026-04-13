@@ -1,4 +1,5 @@
 // config.js — Spell Config Editor page logic
+import { netClient } from './net.js';
 
 let spells = []; // current spell data from server
 const effectTypes = ['SchoolDamage', 'Heal', 'ApplyAura', 'TriggerSpell', 'Energize', 'WeaponDamage'];
@@ -18,8 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---- API ----
 async function loadSpells() {
   try {
-    const resp = await fetch('/api/spells');
-    spells = await resp.json();
+    spells = await netClient.get('/api/spells');
     render();
   } catch (e) {
     showFeedback('Failed to load spells: ' + e.message, 'error');
@@ -33,19 +33,10 @@ async function applySpell(id) {
   const data = buildRequest(id, card);
 
   try {
-    const resp = await fetch(`/api/spells/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (resp.ok) {
-      showFeedback(`Spell #${id} updated`, 'success');
-    } else {
-      const err = await resp.json();
-      showFeedback(err.error || 'Update failed', 'error');
-    }
+    await netClient.put(`/api/spells/${id}`, data);
+    showFeedback(`Spell #${id} updated`, 'success');
   } catch (e) {
-    showFeedback('Request failed: ' + e.message, 'error');
+    showFeedback(e.message || 'Update failed', 'error');
   }
 }
 
@@ -319,23 +310,14 @@ async function createSpell() {
   };
 
   try {
-    const resp = await fetch('/api/spells', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (resp.ok || resp.status === 201) {
-      showFeedback(`Spell "${name}" created`, 'success');
-      document.getElementById('create-name').value = '';
-      document.getElementById('create-effect-list').innerHTML = '';
-      addCreateEffect();
-      loadSpells();
-    } else {
-      const err = await resp.json();
-      showFeedback(err.error || 'Create failed', 'error');
-    }
+    await netClient.post('/api/spells', data);
+    showFeedback(`Spell "${name}" created`, 'success');
+    document.getElementById('create-name').value = '';
+    document.getElementById('create-effect-list').innerHTML = '';
+    addCreateEffect();
+    loadSpells();
   } catch (e) {
-    showFeedback('Request failed: ' + e.message, 'error');
+    showFeedback(e.message || 'Create failed', 'error');
   }
 }
 
@@ -344,14 +326,9 @@ async function deleteSpell(id, cardEl) {
   if (!confirm(`Delete spell #${id}? This cannot be undone.`)) return;
 
   try {
-    const resp = await fetch(`/api/spells/${id}`, { method: 'DELETE' });
-    if (resp.ok) {
-      cardEl.remove();
-      showFeedback(`Spell #${id} deleted`, 'success');
-    } else {
-      const err = await resp.json();
-      showFeedback(err.error || 'Delete failed', 'error');
-    }
+    await netClient.del(`/api/spells/${id}`);
+    cardEl.remove();
+    showFeedback(`Spell #${id} deleted`, 'success');
   } catch (e) {
     showFeedback('Request failed: ' + e.message, 'error');
   }

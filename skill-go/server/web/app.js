@@ -1,5 +1,6 @@
 // app.js — Entry point: targeting, movement, HUD, spell log
 import * as THREE from 'three';
+import { netClient } from './net.js';
 import { initScene, setMouseFromEvent, raycastCharacters, raycastGround, addUpdatable, getScene, getGridAndFloor } from './scene.js';
 import { createCharacter, updateCharacter, removeCharacter, moveUnit, updateUnitMovement, getCharacterMeshes } from './character.js';
 import { clearAuraRings, createSelectionRing, updateSelectionRingPosition, removeSelectionRing } from './vfx.js';
@@ -32,22 +33,10 @@ let castingDuration = null;
 let castingSpellID = null;
 let castingTargetGUID = null;
 
-// ---- API ----
-async function apiGet(path) {
-  const resp = await fetch(path);
-  if (!resp.ok) throw new Error(`GET ${path}: ${resp.status}`);
-  return resp.json();
-}
-async function apiPost(path, body) {
-  const resp = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-  if (!resp.ok) throw new Error(`POST ${path}: ${resp.status}`);
-  return resp.json();
-}
-async function apiDelete(path) {
-  const resp = await fetch(path, { method: 'DELETE' });
-  if (!resp.ok) throw new Error(`DELETE ${path}: ${resp.status}`);
-  return resp.json();
-}
+// ---- API (via netClient) ----
+const apiGet = (path, params) => netClient.get(path, params);
+const apiPost = (path, body) => netClient.post(path, body);
+const apiDelete = (path) => netClient.del(path);
 
 // ---- Draggable & Collapsible Panels ----
 function initPanel(panelId) {

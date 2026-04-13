@@ -1,10 +1,10 @@
 // trace.js — Spell Trace Viewer page logic
+import { netClient } from './net.js';
 
-const API_BASE = ''; // same origin
 let allEvents = [];     // flat array of all events
 let flowMap = new Map(); // flowId -> { events[], spellName, collapsed }
 let activeSpan = 'all';
-let eventSource = null;
+let traceSubscription = null;
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -17,8 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // ---- API calls ----
 async function loadHistory() {
   try {
-    const resp = await fetch(API_BASE + '/api/trace/history');
-    const events = await resp.json();
+    const events = await netClient.get('/api/trace/history');
     appendEvents(events);
     render();
   } catch (e) {
@@ -28,7 +27,7 @@ async function loadHistory() {
 
 async function clearTrace() {
   try {
-    await fetch(API_BASE + '/api/trace?clear=true');
+    await netClient.get('/api/trace', { clear: 'true' });
     allEvents = [];
     flowMap.clear();
     render();
@@ -37,32 +36,18 @@ async function clearTrace() {
   }
 }
 
-// ---- SSE ----
+// ---- SSE (via netClient) ----
 function connectSSE() {
-  if (eventSource) eventSource.close();
+  if (traceSubscription) traceSubscription.close();
   setConnStatus(false);
 
-  eventSource = new EventSource(API_BASE + '/api/trace/stream');
+  traceSubscription = netClient.subscribe('/api/trace/stream', (event) => {
+    appendEvents([event]);
+    render();
+  });
 
-  eventSource.onopen = () => {
-    setConnStatus(true);
-  };
-
-  eventSource.onmessage = (msg) => {
-    try {
-      const event = JSON.parse(msg.data);
-      appendEvents([event]);
-      render();
-    } catch (e) {
-      // ignore parse errors
-    }
-  };
-
-  eventSource.onerror = () => {
-    setConnStatus(false);
-    eventSource.close();
-    // auto-reconnect after 3s
-    setTimeout(connectSSE, 3000);
+  traceSubscription.onReconnect = (status) => {
+    setConnStatus(status === 'connected');
   };
 }
 
