@@ -2,7 +2,6 @@ package spell
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"skill-go/server/aura"
@@ -83,13 +82,10 @@ type SpellContext struct {
 	ScriptRegistry *script.Registry
 
 	// Delayed execution
-	delayedHits  []delayedHit
-	pendingHits  sync.WaitGroup
+	delayedHits []delayedHit
 
 	// Channeled spell
-	channelTicker *time.Ticker
-	channelDone   chan struct{}
-	channelStop   chan struct{}
+	channelStop chan struct{}
 
 	// Empower spell
 	empowerStart   time.Time
@@ -404,20 +400,6 @@ func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 				hitAt:  now.Add(delay),
 			}
 			s.delayedHits = append(s.delayedHits, dh)
-			s.pendingHits.Add(1)
-
-			go func(d delayedHit) {
-				remaining := time.Until(d.hitAt)
-				if remaining > 0 {
-					time.Sleep(remaining)
-				}
-				s.Trace.Event(trace.SpanSpell, "delayed_hit_arrived", spellID, spellName, map[string]interface{}{
-					"target":      d.target.Name,
-					"effectIndex": d.eff.EffectIndex,
-				})
-				s.executeHit(d)
-				s.pendingHits.Done()
-			}(dh)
 		}
 	}
 
@@ -429,33 +411,30 @@ func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 	return spelldef.CastResultSuccess
 }
 
-// WaitDelayedHits blocks until all delayed hits have been processed.
-func (s *SpellContext) WaitDelayedHits() {
-	s.pendingHits.Wait()
-	s.Trace.Event(trace.SpanSpell, "all_delayed_hits_processed", s.Info.ID, s.Info.Name, nil)
-	s.Finish()
-}
-
-// executeHit runs the Hit phase for a single delayed hit entry.
-func (s *SpellContext) executeHit(d delayedHit) {
-	if s.Cancelled || !d.target.IsAlive() {
+// ExecuteHit runs the Hit phase for a single delayed hit entry.
+func (s *SpellContext) ExecuteHit(target *unit.Unit, eff spelldef.SpellEffectInfo) {
+	if s.Cancelled || !target.IsAlive() {
 		s.Trace.Event(trace.SpanSpell, "delayed_hit_skipped", s.Info.ID, s.Info.Name, map[string]interface{}{
 			"cancelled":  s.Cancelled,
-			"targetAlive": d.target.IsAlive(),
+			"targetAlive": target.IsAlive(),
 		})
 		return
 	}
-	ctx := &effectAdapter{caster: s.Caster, targets: []*unit.Unit{d.target}, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
-	handler := s.EffectStore.GetHitHandler(d.eff.EffectType)
+	s.Trace.Event(trace.SpanSpell, "delayed_hit_arrived", s.Info.ID, s.Info.Name, map[string]interface{}{
+		"target":      target.Name,
+		"effectIndex": eff.EffectIndex,
+	})
+	ctx := &effectAdapter{caster: s.Caster, targets: []*unit.Unit{target}, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
+	handler := s.EffectStore.GetHitHandler(eff.EffectType)
 	if handler != nil {
 		s.Trace.Event(trace.SpanEffectHit, "hit", s.Info.ID, s.Info.Name, map[string]interface{}{
-			"effectIndex": d.eff.EffectIndex,
-			"effectType":  int(d.eff.EffectType),
-			"target":      d.target.Name,
+			"effectIndex": eff.EffectIndex,
+			"effectType":  int(eff.EffectType),
+			"target":      target.Name,
 		})
-		handler(ctx, d.eff, d.target)
+		handler(ctx, eff, target)
 	}
-	s.triggerHitProc(d.target)
+	s.TriggerHitProc(target)
 }
 
 // executeHitAll runs the Hit phase for all effects on all targets (immediate path).
@@ -494,7 +473,7 @@ func (s *SpellContext) executeHitAll() {
 				}
 
 				// Auto-trigger proc on target
-				s.triggerHitProc(target)
+				s.TriggerHitProc(target)
 			}
 		}
 	}
@@ -503,7 +482,6 @@ func (s *SpellContext) executeHitAll() {
 // --- Channeling ---
 
 func (s *SpellContext) startChannel() spelldef.CastResult {
-	s.channelDone = make(chan struct{})
 	s.channelStop = make(chan struct{})
 	duration := time.Duration(s.Info.ChannelDuration) * time.Millisecond
 	interval := time.Duration(s.Info.TickInterval) * time.Millisecond
@@ -512,8 +490,6 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 		interval = 1000 * time.Millisecond
 	}
 
-	s.channelTicker = time.NewTicker(interval)
-	totalTicks := int(duration/interval) + 1
 	s.State = StateChanneling
 	s.Trace.Event(trace.SpanSpell, "state_change", s.Info.ID, s.Info.Name, map[string]interface{}{
 		"from":     "Launched",
@@ -522,104 +498,13 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 		"interval": interval.String(),
 	})
 
-	tickCount := 0
-
-	go func() {
-		defer func() {
-			s.channelTicker.Stop()
-			close(s.channelDone)
-		}()
-
-		timer := time.NewTimer(duration)
-		defer timer.Stop()
-
-		for {
-			select {
-			case _, ok := <-s.channelTicker.C:
-				if !ok {
-					return
-				}
-				tickCount++
-				s.Trace.Event(trace.SpanSpell, "channel_tick", s.Info.ID, s.Info.Name, map[string]interface{}{
-					"tick":        tickCount,
-					"totalTicks":  totalTicks,
-					"spellID":    s.Info.ID,
-					"spellName":  s.Info.Name,
-				})
-
-				// Check all targets still alive — stop channel if all dead
-				allDead := true
-				for _, target := range s.Targets {
-					if target.IsAlive() {
-						allDead = false
-						break
-					}
-				}
-				if allDead {
-					s.Trace.Event(trace.SpanSpell, "channel_stopped", s.Info.ID, s.Info.Name, map[string]interface{}{
-						"reason":     "all_targets_dead",
-						"total_ticks": tickCount,
-					})
-					return
-				}
-
-				ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
-				for _, eff := range s.Info.Effects {
-					handler := s.EffectStore.GetHitHandler(eff.EffectType)
-					if handler != nil {
-						for _, target := range s.Targets {
-							if target.IsAlive() {
-								s.Trace.Event(trace.SpanEffectHit, "hit", s.Info.ID, s.Info.Name, map[string]interface{}{
-									"effectIndex": eff.EffectIndex,
-									"effectType":  int(eff.EffectType),
-									"target":      target.Name,
-									"channelTick": tickCount,
-								})
-								handler(ctx, eff, target)
-							}
-						}
-					}
-				}
-
-				// Script hook: OnChannelTick
-				if s.ScriptRegistry != nil {
-					if ss := s.ScriptRegistry.GetSpellScript(s.ID); ss != nil {
-						ss.Fire(script.HookOnChannelTick, s)
-					}
-				}
-
-			case <-timer.C:
-				s.Trace.Event(trace.SpanSpell, "channel_elapsed", s.Info.ID, s.Info.Name, map[string]interface{}{
-					"total_ticks": tickCount,
-				})
-				s.State = StateFinished
-				return
-
-			case <-s.channelStop:
-				s.Trace.Event(trace.SpanSpell, "channel_stopped", s.Info.ID, s.Info.Name, map[string]interface{}{
-					"reason":      "cancelled",
-					"total_ticks": tickCount,
-				})
-				s.State = StateFinished
-				return
-			}
-		}
-	}()
-
+	// No goroutine — the event loop manages the ticker via time.AfterFunc
 	return spelldef.CastResultSuccess
 }
 
 func (s *SpellContext) stopChannel() {
 	if s.channelStop != nil {
 		close(s.channelStop)
-	}
-}
-
-// WaitChannel blocks until the channel finishes.
-func (s *SpellContext) WaitChannel() {
-	if s.channelDone != nil {
-		<-s.channelDone
-		s.Trace.Event(trace.SpanSpell, "channel_finished", s.Info.ID, s.Info.Name, nil)
 	}
 }
 
@@ -751,10 +636,95 @@ func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
 	return s.Finish()
 }
 
+// --- Event loop interface ---
+
+// DelayedHitSchedule describes a delayed hit to be scheduled by the event loop.
+type DelayedHitSchedule struct {
+	Target *unit.Unit
+	Eff    spelldef.SpellEffectInfo
+	Delay  time.Duration
+}
+
+// GetDelayedHitSchedules returns the list of delayed hits to be scheduled.
+func (s *SpellContext) GetDelayedHitSchedules() []DelayedHitSchedule {
+	schedules := make([]DelayedHitSchedule, len(s.delayedHits))
+	for i, dh := range s.delayedHits {
+		schedules[i] = DelayedHitSchedule{
+			Target: dh.target,
+			Eff:    dh.eff,
+			Delay:  time.Until(dh.hitAt),
+		}
+	}
+	return schedules
+}
+
+// ChannelStop returns the stop channel for the active channel.
+func (s *SpellContext) ChannelStop() chan struct{} {
+	return s.channelStop
+}
+
+// TotalTicks returns the total number of channel ticks for this spell.
+func (s *SpellContext) TotalTicks() int {
+	duration := time.Duration(s.Info.ChannelDuration) * time.Millisecond
+	interval := time.Duration(s.Info.TickInterval) * time.Millisecond
+	if interval == 0 {
+		interval = time.Second
+	}
+	return int(duration/interval) + 1
+}
+
+// ExecuteChannelTick executes one channel tick. Returns false if the channel should stop.
+func (s *SpellContext) ExecuteChannelTick() bool {
+	if s.Cancelled {
+		return false
+	}
+
+	allDead := true
+	for _, target := range s.Targets {
+		if target.IsAlive() {
+			allDead = false
+			break
+		}
+	}
+	if allDead {
+		return false
+	}
+
+	ctx := &effectAdapter{caster: s.Caster, targets: s.Targets, trace: s.Trace, spellID: s.Info.ID, spellName: s.Info.Name}
+	for _, eff := range s.Info.Effects {
+		handler := s.EffectStore.GetHitHandler(eff.EffectType)
+		if handler != nil {
+			for _, target := range s.Targets {
+				if target.IsAlive() {
+					s.Trace.Event(trace.SpanEffectHit, "hit", s.Info.ID, s.Info.Name, map[string]interface{}{
+						"effectIndex": eff.EffectIndex,
+						"effectType":  int(eff.EffectType),
+						"target":      target.Name,
+					})
+					handler(ctx, eff, target)
+				}
+			}
+		}
+	}
+
+	if s.ScriptRegistry != nil {
+		if ss := s.ScriptRegistry.GetSpellScript(s.ID); ss != nil {
+			ss.Fire(script.HookOnChannelTick, s)
+		}
+	}
+
+	return true
+}
+
+// FinishChannel marks the channel as finished.
+func (s *SpellContext) FinishChannel() {
+	s.State = StateFinished
+}
+
 // --- Helpers ---
 
-// triggerHitProc checks for proc auras on the target and triggers them.
-func (s *SpellContext) triggerHitProc(target *unit.Unit) {
+// TriggerHitProc checks for proc auras on the target and triggers them.
+func (s *SpellContext) TriggerHitProc(target *unit.Unit) {
 	if s.AuraProvider == nil {
 		return
 	}

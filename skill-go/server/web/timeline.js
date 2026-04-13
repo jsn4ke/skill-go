@@ -151,7 +151,9 @@ export function processEvents(events, characters, casterGUID, selectedTargetGUID
 
       // Aura applied
       if (span === 'aura' && event === 'applied') {
+        console.log('[DEBUG] aura.applied event, fields:', fields, 'chars:', characters.length);
         const targetGroup = findCharacterByName(characters, fields.target);
+        console.log('[DEBUG] findCharacterByName("Target Dummy"):', targetGroup ? targetGroup.userData.name : 'NOT FOUND');
         if (targetGroup) {
           const schoolName = SCHOOL_MASK_TO_NAME[lastSchoolMask] || 'Arcane';
           const color = SCHOOL_COLORS[schoolName] || 0x44ff44;

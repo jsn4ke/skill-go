@@ -46,8 +46,9 @@ func runHTTPServer(addr string) {
 		fmt.Fprintf(os.Stderr, "warning: file logging disabled: %v\n", err)
 	}
 
-	gs := api.NewGameState(fileSink)
-	srv := api.NewServer(addr, gs)
+	gl := api.NewGameLoop(fileSink)
+	gl.Start()
+	srv := api.NewServer(addr, gl)
 	fmt.Printf("=== skill-go Spell Demo ===\n")
 	fmt.Printf("Open http://localhost%s in your browser\n", addr)
 	fmt.Printf("Trace log: server/log/trace-*.log\n")

@@ -2,6 +2,7 @@ package spell
 
 import (
 	"testing"
+	"time"
 
 	"skill-go/server/aura"
 	"skill-go/server/cooldown"
@@ -442,8 +443,15 @@ func TestFlow_DelayedHit(t *testing.T) {
 		t.Fatalf("expected CastResultSuccess, got %d (err=%d)", result, sc.LastCastErr)
 	}
 
-	// Wait for all delayed hits to complete. This also calls Finish().
-	sc.WaitDelayedHits()
+	// Process delayed hits (event loop would do this in production).
+	for _, sched := range sc.GetDelayedHitSchedules() {
+		if sched.Delay > 0 {
+			time.Sleep(sched.Delay)
+		}
+		sc.ExecuteHit(sched.Target, sched.Eff)
+		sc.TriggerHitProc(sched.Target)
+	}
+	sc.Finish()
 
 	// Verify the event sequence.
 	if !rec.HasEvent(trace.SpanSpell, "prepare") {
@@ -478,14 +486,9 @@ func TestFlow_DelayedHit(t *testing.T) {
 		t.Error("expected hit event (default handler registered for SpellEffectSchoolDamage)")
 	}
 
-	// Finish should have been called by WaitDelayedHits.
+	// Finish was called explicitly above.
 	if !rec.HasEvent(trace.SpanSpell, "finish") {
 		t.Error("missing finish event")
-	}
-
-	// all_delayed_hits_processed should have been emitted.
-	if !rec.HasEvent(trace.SpanSpell, "all_delayed_hits_processed") {
-		t.Error("missing all_delayed_hits_processed event")
 	}
 }
 

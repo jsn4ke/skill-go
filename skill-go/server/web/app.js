@@ -387,6 +387,10 @@ function hideCastBar() {
 function processCastResult(result, spellID, targetGUID) {
   if (result.units) reconcileUnits(result.units);
 
+  // Debug: check aura data from server
+  const targetData = result.units?.find(u => u.guid == targetGUID);
+  if (targetData) console.log('[DEBUG] target auras from server:', targetData.auras);
+
   let targetDied = false;
   if (result.units) {
     for (const u of result.units) {
