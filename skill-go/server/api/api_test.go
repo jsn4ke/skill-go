@@ -6,12 +6,23 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
+func testDataDir(t *testing.T) string {
+	t.Helper()
+	// Walk up from api/ to server/ then into data/
+	dir, err := filepath.Abs("../data")
+	if err != nil {
+		t.Fatalf("resolve data dir: %v", err)
+	}
+	return dir
+}
+
 func setupTestServer(t *testing.T) (*httptest.Server, *GameLoop) {
 	t.Helper()
-	gl := NewGameLoop(nil)
+	gl := NewGameLoop(nil, testDataDir(t))
 	gl.Start()
 	srv := NewServer(":0", gl)
 	ts := httptest.NewServer(srv.Handler)
@@ -74,7 +85,7 @@ func TestCast_Success(t *testing.T) {
 	ts, _ := setupTestServer(t)
 
 	body := map[string]interface{}{
-		"spellID":   42833,
+		"spellID":   38692,
 		"targetIDs": []uint64{3},
 	}
 	resp := postJSON(t, ts.URL+"/api/cast", body)
@@ -216,7 +227,7 @@ func TestSpells_ReturnsList(t *testing.T) {
 	// Check Fireball
 	found := false
 	for _, s := range spells {
-		if s.ID == 42833 && s.Name == "Fireball" {
+		if s.ID == 38692 && s.Name == "火球术" {
 			found = true
 			if s.SchoolName != "Fire" {
 				t.Errorf("expected school Fire, got %s", s.SchoolName)
@@ -227,7 +238,7 @@ func TestSpells_ReturnsList(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("Fireball (42833) not found in spell list")
+		t.Error("Fireball (38692) not found in spell list")
 	}
 }
 

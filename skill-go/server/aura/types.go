@@ -54,6 +54,7 @@ type AuraEffect struct {
 	BaseAmount    int32
 	MiscValue     int32
 	PeriodicTimer int32 // ms between ticks, 0 = not periodic
+	AppliedTicks  int32 // number of ticks already processed
 }
 
 // AuraApplication is the bottom layer — binds an aura to a specific target.

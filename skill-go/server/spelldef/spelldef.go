@@ -53,8 +53,9 @@ type SpellEffectInfo struct {
 	EnergizeType   PowerType // for SpellEffectEnergize
 	EnergizeAmount int32     // for SpellEffectEnergize
 	WeaponPercent  float64   // for SpellEffectWeaponDamage
-	AuraType       int32     // for SpellEffectApplyAura
-	AuraDuration   int32     // for SpellEffectApplyAura (ms)
+	AuraType           int32     // for SpellEffectApplyAura
+	AuraDuration       int32     // for SpellEffectApplyAura (ms)
+	PeriodicTickInterval int32   // ms between periodic ticks (DoT/HoT), 0 = not periodic
 }
 
 // TargetReference describes how to select targets for an effect.

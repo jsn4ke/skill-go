@@ -46,7 +46,7 @@ func runHTTPServer(addr string) {
 		fmt.Fprintf(os.Stderr, "warning: file logging disabled: %v\n", err)
 	}
 
-	gl := api.NewGameLoop(fileSink)
+	gl := api.NewGameLoop(fileSink, "server/data")
 	gl.Start()
 	srv := api.NewServer(addr, gl)
 	fmt.Printf("=== skill-go Spell Demo ===\n")

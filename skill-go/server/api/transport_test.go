@@ -79,7 +79,7 @@ func TestHTTPTransport_QueryParams(t *testing.T) {
 func TestHTTPTransport_BodyParsing(t *testing.T) {
 	transport := NewHTTPTransport()
 
-	body := `{"spellID":42833,"targetIDs":[2,3]}`
+	body := `{"spellID":38692,"targetIDs":[2,3]}`
 	req := httptest.NewRequest("POST", "/api/cast", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 

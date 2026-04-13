@@ -1,0 +1,4 @@
+spellId,name,school,castTime,cooldown,gcd,manaCost,rangeYards
+38692,火球术,fire,3500,0,1500,465,35
+27088,冰霜新星,frost,0,25000,1500,185,0
+27126,奥术智慧,arcane,0,0,1500,700,30

@@ -1,0 +1,6 @@
+spellId,index,type,school,value,tickInterval,duration
+38692,0,school_damage,fire,717,,
+38692,1,apply_aura,fire,21,2000,8000
+27088,0,school_damage,frost,99,,
+27088,1,apply_aura,,,,8000
+27126,0,apply_aura,arcane,40,,1800000

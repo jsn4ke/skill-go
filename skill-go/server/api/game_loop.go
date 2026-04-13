@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"time"
 
@@ -110,12 +111,14 @@ type GameLoop struct {
 	tr           *trace.Trace
 	hub          *trace.StreamHub
 	fileSink     *trace.FileSink
+	dataDir      string
 	pending      *pendingCast
 	nextGUID     uint64
 }
 
 // NewGameLoop creates a game loop with predefined units and spells.
-func NewGameLoop(fileSink *trace.FileSink) *GameLoop {
+// dataDir specifies the directory containing spells.csv and spell_effects.csv.
+func NewGameLoop(fileSink *trace.FileSink, dataDir string) *GameLoop {
 	mage := unit.NewUnit(1, "Mage", 5000, 20000)
 	mage.SetLevel(60)
 	mage.SpellPower = 500
@@ -139,7 +142,7 @@ func NewGameLoop(fileSink *trace.FileSink) *GameLoop {
 	target.SetLevel(63)
 	target.Armor = 5000
 	target.SetResistance(spelldef.SchoolMaskFire, 100)
-	target.Position = unit.Position{X: 40, Y: 0, Z: 0}
+	target.Position = unit.Position{X: 30, Y: 0, Z: 0}
 
 	allUnits := []*unit.Unit{mage, warrior, target}
 
@@ -181,6 +184,7 @@ func NewGameLoop(fileSink *trace.FileSink) *GameLoop {
 		tr:           tr,
 		hub:          hub,
 		fileSink:     fileSink,
+		dataDir:      dataDir,
 		nextGUID:     100,
 	}
 
@@ -191,36 +195,15 @@ func NewGameLoop(fileSink *trace.FileSink) *GameLoop {
 }
 
 func (gl *GameLoop) initSpellBook() {
-	gl.spellBook = []*spelldef.SpellInfo{
-		{
-			ID:             42833,
-			Name:           "Fireball",
-			SchoolMask:     spelldef.SchoolMaskFire,
-			RecoveryTime:   0,
-			CastTime:       3500,
-			PowerCost:      400,
-			MaxTargets:     1,
-			Effects: []spelldef.SpellEffectInfo{
-				{
-					EffectIndex: 0,
-					EffectType:  spelldef.SpellEffectSchoolDamage,
-					SchoolMask:  spelldef.SchoolMaskFire,
-					BasePoints:  888,
-					Coef:        1.0,
-				},
-				{
-					EffectIndex: 1,
-					EffectType:  spelldef.SpellEffectApplyAura,
-					AuraType:    int32(aura.AuraTypeDebuff),
-					AuraDuration: 8000,
-				},
-			},
-		},
+	spells, err := spelldef.LoadSpells(gl.dataDir)
+	if err != nil {
+		log.Fatalf("failed to load spells: %v", err)
 	}
-
-	for _, s := range gl.spellBook {
-		if s.ID >= gl.nextSpellID {
-			gl.nextSpellID = s.ID + 1
+	gl.spellBook = make([]*spelldef.SpellInfo, len(spells))
+	for i := range spells {
+		gl.spellBook[i] = &spells[i]
+		if spells[i].ID >= gl.nextSpellID {
+			gl.nextSpellID = spells[i].ID + 1
 		}
 	}
 }
@@ -799,7 +782,7 @@ func (gl *GameLoop) handleTraceClear(cmd Command) {
 	reply(cmd, Result{})
 }
 
-// handleAuraUpdate expires auras whose duration has elapsed.
+// handleAuraUpdate expires auras whose duration has elapsed and processes periodic damage ticks.
 func (gl *GameLoop) handleAuraUpdate(cmd Command) {
 	now := time.Now().UnixMilli()
 	for guid, mgr := range gl.auraMgrs {
@@ -814,7 +797,40 @@ func (gl *GameLoop) handleAuraUpdate(cmd Command) {
 			if timerStart == 0 {
 				continue
 			}
-			if (now - timerStart) >= int64(a.Duration) {
+			elapsed := now - timerStart
+
+			// Process periodic damage ticks
+			for _, eff := range a.Effects {
+				if eff.PeriodicTimer <= 0 {
+					continue
+				}
+				expectedTicks := int32(elapsed / int64(eff.PeriodicTimer))
+				if expectedTicks > eff.AppliedTicks {
+					ticksToApply := expectedTicks - eff.AppliedTicks
+					t := trace.NewTraceWithSinks(gl.recorder, trace.NewStreamSink(gl.hub))
+					for i := int32(0); i < ticksToApply; i++ {
+						target := a.Caster
+						for _, app := range a.Applications {
+							if app.Target != nil {
+								target = app.Target
+								break
+							}
+						}
+						if target != nil && target.Alive {
+							target.TakeDamage(eff.BaseAmount)
+							t.Event(trace.SpanAura, "periodic_damage", a.SpellID, a.SourceName, map[string]interface{}{
+								"target":  target.Name,
+								"damage":  eff.BaseAmount,
+								"tick":    eff.AppliedTicks + i + 1,
+							})
+						}
+					}
+					eff.AppliedTicks = expectedTicks
+				}
+			}
+
+			// Check aura expiration
+			if elapsed >= int64(a.Duration) {
 				t := trace.NewTraceWithSinks(gl.recorder, trace.NewStreamSink(gl.hub))
 				mgr.RemoveAura(a, aura.RemoveModeExpired, t, a.SpellID, a.SourceName)
 			}

@@ -319,7 +319,7 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 			Duration:   eff.AuraDuration,
 			StackAmount: 1,
 			Effects: []*aura.AuraEffect{
-				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints},
+				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, PeriodicTimer: eff.PeriodicTickInterval},
 			},
 		}
 		mgr.ApplyAura(a, ctx.GetTrace(), ctx.GetSpellID(), ctx.GetSpellName())
