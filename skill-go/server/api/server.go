@@ -132,9 +132,11 @@ type CastPrepareResponse struct {
 
 // pendingCast holds a spell context between Prepare and Complete.
 type pendingCast struct {
-	ctx       *spell.SpellContext
-	spellInfo *spelldef.SpellInfo
-	targetIDs []uint64
+	ctx            *spell.SpellContext
+	spellInfo      *spelldef.SpellInfo
+	targetIDs      []uint64
+	castTimeMs     int32  // original cast time
+	pushbackTotalMs int32 // accumulated pushback
 }
 
 // ---------------------------------------------------------------------------
@@ -876,9 +878,11 @@ func handleCast(gs *GameState) http.HandlerFunc {
 
 		// Cast-time spell: store context, return immediately
 		gs.Pending = &pendingCast{
-			ctx:       ctx,
-			spellInfo: spellInfo,
-			targetIDs: req.TargetIDs,
+			ctx:             ctx,
+			spellInfo:       spellInfo,
+			targetIDs:       req.TargetIDs,
+			castTimeMs:      spellInfo.CastTime,
+			pushbackTotalMs: 0,
 		}
 
 		castEvents := gs.Recorder.Events()
@@ -978,6 +982,57 @@ func handleCastCancel(gs *GameState) http.HandlerFunc {
 
 		gs.Recorder.Reset()
 		gs.Pending = nil
+	}
+}
+
+func handleCastPushback(gs *GameState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+			return
+		}
+
+		var req struct {
+			PushbackMs int32 
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+
+		gs.mu.Lock()
+		defer gs.mu.Unlock()
+
+		if gs.Pending == nil {
+			writeJSON(w, http.StatusOK, map[string]string{"result": "no_pending"})
+			return
+		}
+
+		maxPushback := gs.Pending.castTimeMs // 100% cap
+		gs.Pending.pushbackTotalMs += req.PushbackMs
+
+		// Pushback exceeded 100% of original cast time: auto-interrupt
+		if gs.Pending.pushbackTotalMs >= maxPushback {
+			ctx := gs.Pending.ctx
+			ctx.Cancel()
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"result":         "interrupted",
+				"reason":         "pushback_limit",
+				"pushbackTotalMs": gs.Pending.pushbackTotalMs,
+				"maxPushbackMs":   maxPushback,
+			})
+			gs.Recorder.Reset()
+			gs.Pending = nil
+			return
+		}
+
+		newRemainingMs := gs.Pending.castTimeMs + gs.Pending.pushbackTotalMs
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"result":         "pushed",
+			"newRemainingMs": newRemainingMs,
+			"pushbackTotalMs": gs.Pending.pushbackTotalMs,
+			"maxPushbackMs":   maxPushback,
+		})
 	}
 }
 
@@ -1388,6 +1443,7 @@ func handleApiIndex(w http.ResponseWriter, r *http.Request) {
 		{"method": "POST", "path": "/api/cast",           "description": "Cast a spell (prepare phase for cast-time spells)"},
 		{"method": "POST", "path": "/api/cast/complete",  "description": "Complete a pending cast"},
 		{"method": "POST", "path": "/api/cast/cancel",    "description": "Cancel a pending cast"},
+			{"method": "POST", "path": "/api/cast/pushback",  "description": "Pushback a casting spell (interrupt if >100% cast time)"},
 		{"method": "GET",  "path": "/api/units",          "description": "List all units with stats and auras"},
 		{"method": "POST", "path": "/api/units/add",      "description": "Spawn a new unit"},
 		{"method": "PUT",  "path": "/api/units/update",   "description": "Update a unit (e.g. level change)"},
@@ -1414,6 +1470,7 @@ func NewServer(addr string, gs *GameState) *http.Server {
 	mux.HandleFunc("/api/cast", handleCast(gs))
 	mux.HandleFunc("/api/cast/complete", handleCastComplete(gs))
 	mux.HandleFunc("/api/cast/cancel", handleCastCancel(gs))
+	mux.HandleFunc("/api/cast/pushback", handleCastPushback(gs))
 	mux.HandleFunc("/api/units", handleUnits(gs))
 	mux.HandleFunc("/api/units/add", handleAddUnit(gs))
 	mux.HandleFunc("/api/units/update", handleUpdateUnit(gs))

@@ -513,6 +513,7 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 	}
 
 	s.channelTicker = time.NewTicker(interval)
+	totalTicks := int(duration/interval) + 1
 	s.State = StateChanneling
 	s.Trace.Event(trace.SpanSpell, "state_change", s.Info.ID, s.Info.Name, map[string]interface{}{
 		"from":     "Launched",
@@ -540,7 +541,10 @@ func (s *SpellContext) startChannel() spelldef.CastResult {
 				}
 				tickCount++
 				s.Trace.Event(trace.SpanSpell, "channel_tick", s.Info.ID, s.Info.Name, map[string]interface{}{
-					"tick": tickCount,
+					"tick":        tickCount,
+					"totalTicks":  totalTicks,
+					"spellID":    s.Info.ID,
+					"spellName":  s.Info.Name,
 				})
 
 				// Check all targets still alive — stop channel if all dead

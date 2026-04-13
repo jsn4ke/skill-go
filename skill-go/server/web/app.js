@@ -277,6 +277,10 @@ function onCanvasClick(event) {
   }
 
   // Priority 3: ground click → move selected target
+  // Movement interrupts casting (WoW behavior)
+  if (castingState === 'casting') {
+    cancelCast();
+  }
   const groundHit = raycastGround();
   if (groundHit && selectedTargetGUID) {
     const group = characters.find(c => c.userData.guid == selectedTargetGUID);
