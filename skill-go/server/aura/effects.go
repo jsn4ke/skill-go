@@ -2,7 +2,6 @@ package aura
 
 import (
 	"log"
-	"time"
 
 	"skill-go/server/unit"
 )
@@ -57,62 +56,20 @@ func (t *StatTracker) GetBonus(stat StatType) int32 {
 // --- Periodic effects ---
 
 // PeriodicEffect handles damage/heal ticks on a timer.
+// Deprecated: use event loop aura_update ticker instead of this struct.
 type PeriodicEffect struct {
-	Aura      *Aura
-	Effect    *AuraEffect
-	Target    *unit.Unit
-	Caster    *unit.Unit
-	IsDamage  bool // true = periodic damage, false = periodic heal
-	Stopped   chan struct{}
+	Aura     *Aura
+	Effect   *AuraEffect
+	Target   *unit.Unit
+	Caster   *unit.Unit
+	IsDamage bool // true = periodic damage, false = periodic heal
 }
 
-// Start begins the periodic tick loop.
+// Start is deprecated. Periodic effects must be handled via the event loop
+// (aura_update ticker) to avoid race conditions. This method is a no-op.
 func (pe *PeriodicEffect) Start() {
-	interval := time.Duration(pe.Effect.PeriodicTimer) * time.Millisecond
-	if interval <= 0 {
-		interval = 3000 * time.Millisecond
-	}
-
-	pe.Stopped = make(chan struct{})
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if !pe.Target.IsAlive() {
-					return
-				}
-				pe.tick()
-
-			case <-pe.Stopped:
-				return
-			}
-		}
-	}()
-
-	log.Printf("[Periodic] started %d on %s (interval=%v, damage=%v)",
-		pe.Aura.SpellID, pe.Target.Name, interval, pe.IsDamage)
+	log.Printf("[Periodic] WARNING: PeriodicEffect.Start() is deprecated — use event loop aura_update instead")
 }
 
-// Stop stops the periodic effect.
-func (pe *PeriodicEffect) Stop() {
-	if pe.Stopped != nil {
-		close(pe.Stopped)
-	}
-}
-
-func (pe *PeriodicEffect) tick() {
-	amount := pe.Effect.BaseAmount
-	if pe.IsDamage {
-		pe.Target.TakeDamage(amount)
-		log.Printf("[Periodic] %d: damage tick %d → %s (HP: %d/%d)",
-			pe.Aura.SpellID, amount, pe.Target.Name, pe.Target.Health, pe.Target.MaxHealth)
-	} else {
-		pe.Target.Heal(amount)
-		log.Printf("[Periodic] %d: heal tick %d → %s (HP: %d/%d)",
-			pe.Aura.SpellID, amount, pe.Target.Name, pe.Target.Health, pe.Target.MaxHealth)
-	}
-}
+// Stop is deprecated along with Start().
+func (pe *PeriodicEffect) Stop() {}

@@ -315,6 +315,8 @@ func (gl *GameLoop) dispatch(cmd Command) {
 		gl.handleReset(cmd)
 	case "trace_clear":
 		gl.handleTraceClear(cmd)
+	case "aura_update":
+		gl.handleAuraUpdate(cmd)
 	default:
 		reply(cmd, Result{Err: fmt.Sprintf("unknown command: %s", cmd.Op)})
 	}
