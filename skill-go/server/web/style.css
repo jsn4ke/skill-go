@@ -342,6 +342,8 @@ body.light-theme {
 /* ---- Character overlays (CSS2D) ---- */
 .char-nameplate { color: #fff; font-size: 11px; font-weight: bold; text-shadow: 0 0 4px rgba(0,0,0,0.8); text-align: center; white-space: nowrap; }
 .char-level { color: #aaa; font-size: 9px; text-shadow: 0 0 4px rgba(0,0,0,0.8); text-align: center; }
+.char-stun-label { color: #ffcc00; font-size: 12px; font-weight: bold; text-shadow: 0 0 6px rgba(255,200,0,0.6), 0 1px 3px rgba(0,0,0,0.9); text-align: center; white-space: nowrap; pointer-events: none; animation: stun-pulse 0.6s ease-in-out infinite alternate; }
+@keyframes stun-pulse { from { opacity: 0.7; transform: scale(1); } to { opacity: 1; transform: scale(1.1); } }
 .char-bars { text-align: center; min-width: 80px; }
 .bar-row { display: flex; align-items: center; gap: 3px; margin-bottom: 1px; }
 .bar-label { font-size: 8px; color: #aaa; width: 16px; text-align: right; }
@@ -350,6 +352,8 @@ body.light-theme {
 .bar-hp.high { background: #2ecc71; } .bar-hp.medium { background: #f1c40f; } .bar-hp.low { background: #e74c3c; }
 .bar-mp.high { background: #3498db; } .bar-mp.medium { background: #2980b9; }
 .bar-mp.low { background: #1a5276; }
+.bar-rage.high { background: #e74c3c; } .bar-rage.medium { background: #c0392b; }
+.bar-rage.low { background: #922b21; }
 .bar-value { font-size: 7px; color: #999; width: 36px; text-align: left; }
 
 /* ---- Floating numbers ---- */

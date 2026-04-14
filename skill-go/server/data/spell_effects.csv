@@ -1,6 +1,8 @@
-spellId,index,type,school,value,tickInterval,duration
-38692,0,school_damage,fire,717,,
-38692,1,apply_aura,fire,21,2000,8000
-27088,0,school_damage,frost,99,,
-27088,1,apply_aura,,,,8000
-27126,0,apply_aura,arcane,40,,1800000
+spellId,index,type,school,value,tickInterval,duration,auraType,miscValue,triggerSpellId
+38692,0,school_damage,fire,717,,,,
+38692,1,apply_aura,fire,21,2000,8000,,,
+100,0,charge,physical,1,,,,,
+100,1,trigger_spell,physical,0,,,,,7922
+100,2,weapon_damage,physical,,,,,,
+100,3,energize,physical,9,,,,,
+7922,0,apply_aura,physical,0,,1500,1,4,

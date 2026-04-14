@@ -20,6 +20,7 @@ let selectedTargetGUID = null;
 let auraCountdownTimer = null;
 let targetingSpellID = null;
 const CASTER_GUID = 1;
+let activeCasterGUID = 1;
 let spellLogCounter = 0;
 let serverLogCounter = 0;
 const RESULT_CRIT = 2, RESULT_MISS = 1;
@@ -127,13 +128,14 @@ async function init() {
     createAllCharacters(units);
     // Remove dead non-caster units (server returns them but they shouldn't be visible)
     for (const u of units) {
-      if (!u.alive && u.guid !== CASTER_GUID) {
+      if (!u.alive && u.guid !== activeCasterGUID) {
         const g = characters.find(c => c.userData.guid == u.guid);
         if (g) { clearAuraRings(g); removeCharacter(g); characters.splice(characters.indexOf(g), 1); }
       }
     }
-    updateSelfPanel(units.find(u => u.guid == CASTER_GUID));
+    updateSelfPanel(units.find(u => u.guid == activeCasterGUID));
     updateEnemyDropdown(units);
+    populateCasterDropdown(units);
   } catch (err) {
     console.error('Init failed:', err);
   }
@@ -157,13 +159,13 @@ function reconcileUnits(apiUnits) {
   const apiGUIDs = new Set(apiUnits.map(u => String(u.guid)));
   // Only create alive units — skip dead non-caster units
   for (const u of apiUnits) {
-    if (!u.alive && u.guid !== CASTER_GUID) continue;
+    if (!u.alive && u.guid !== activeCasterGUID) continue;
     if (!characters.find(c => String(c.userData.guid) === String(u.guid))) characters.push(createCharacter(u));
   }
   for (const c of [...characters]) { if (!apiGUIDs.has(String(c.userData.guid))) { clearAuraRings(c); removeCharacter(c); characters.splice(characters.indexOf(c), 1); if (selectedTargetGUID == c.userData.guid) deselectTarget(); } }
   // Remove dead units that somehow remain in characters array
   for (const c of [...characters]) {
-    if (c.userData.unitData && !c.userData.unitData.alive && c.userData.guid !== CASTER_GUID) {
+    if (c.userData.unitData && !c.userData.unitData.alive && c.userData.guid !== activeCasterGUID) {
       clearAuraRings(c);
       removeCharacter(c);
       characters.splice(characters.indexOf(c), 1);
@@ -215,7 +217,7 @@ function selectTarget(guid) {
   selectedTargetGUID = guid;
   const group = characters.find(c => c.userData.guid == guid);
   if (!group) return;
-  const isEnemy = guid !== CASTER_GUID;
+  const isEnemy = guid !== activeCasterGUID;
   createSelectionRing(group, isEnemy);
   const data = group.userData.unitData;
   updateTargetLock(data);
@@ -308,13 +310,13 @@ async function castSpell(spellID, targetGUID) {
 
   try {
     const targetIDs = targetGUID ? [targetGUID] : [];
-    const result = await apiPost('/api/cast', { spellID, targetIDs });
+    const result = await apiPost('/api/cast', { casterGuid: activeCasterGUID, spellID, targetIDs });
 
     if (result.result === 'preparing') {
       // Cast-time spell: enter CASTING state
       enterCastingState(spellID, targetGUID, result.castTimeMs, result.schoolName);
       // Process prepare events (cast glow)
-      if (result.events) processEvents(result.events, characters, CASTER_GUID, targetGUID);
+      if (result.events) processEvents(result.events, characters, activeCasterGUID, targetGUID);
     } else if (result.result === 'success') {
       // Instant spell: process immediately
       processCastResult(result, spellID, targetGUID);
@@ -432,7 +434,7 @@ function processCastResult(result, spellID, targetGUID) {
   let targetDied = false;
   if (result.units) {
     for (const u of result.units) {
-      if (!u.alive && u.guid !== CASTER_GUID) {
+      if (!u.alive && u.guid !== activeCasterGUID) {
         if (selectedTargetGUID != null && u.guid == selectedTargetGUID) {
           targetDied = true;
           deselectTarget();
@@ -442,9 +444,9 @@ function processCastResult(result, spellID, targetGUID) {
   }
 
   if (result.result === 'success') {
-    processEvents(result.events || [], characters, CASTER_GUID, targetGUID);
+    processEvents(result.events || [], characters, activeCasterGUID, targetGUID);
     updateStats(result.events || []);
-    updateSelfPanel(result.units?.find(u => u.guid == CASTER_GUID));
+    updateSelfPanel(result.units?.find(u => u.guid == activeCasterGUID));
     if (!targetDied && targetGUID) {
       const targetData = result.units?.find(u => u.guid == targetGUID);
       if (targetData) { updateEnemyInfo(targetData); updateTargetLock(targetData); }
@@ -458,7 +460,7 @@ function processCastResult(result, spellID, targetGUID) {
   // Auto-remove dead units
   if (result.units) {
     for (const u of result.units) {
-      if (!u.alive && u.guid !== CASTER_GUID) {
+      if (!u.alive && u.guid !== activeCasterGUID) {
         const group = characters.find(c => c.userData.guid == u.guid);
         if (group && !group.userData.removed) {
           group.userData.removed = true;
@@ -497,13 +499,26 @@ function updateEnemyDropdown(units) {
   const select = document.getElementById('enemy-select');
   select.innerHTML = '<option value="">-- Select Target --</option>';
   for (const u of units) {
-    if (u.guid == CASTER_GUID || !u.alive) continue;
+    if (u.guid == activeCasterGUID || !u.alive) continue;
     const opt = document.createElement('option');
     opt.value = String(u.guid);
     opt.textContent = `${u.name} (Lv${u.level})`;
     select.appendChild(opt);
   }
   if (selectedTargetGUID) select.value = String(selectedTargetGUID);
+}
+
+function populateCasterDropdown(units) {
+  const select = document.getElementById('caster-select');
+  select.innerHTML = '';
+  for (const u of units) {
+    if (!u.alive) continue;
+    const opt = document.createElement('option');
+    opt.value = String(u.guid);
+    opt.textContent = `${u.name} (Lv${u.level})`;
+    if (u.guid == activeCasterGUID) opt.selected = true;
+    select.appendChild(opt);
+  }
 }
 
 function updateEnemyInfo(data) {
@@ -839,8 +854,9 @@ async function resetSession() {
     for (const c of characters) clearAuraRings(c);
     const units = await apiGet('/api/units');
     createAllCharacters(units);
-    updateSelfPanel(units.find(u => u.guid == CASTER_GUID));
+    updateSelfPanel(units.find(u => u.guid == activeCasterGUID));
     updateEnemyDropdown(units);
+    populateCasterDropdown(units);
   } catch (err) { console.error('Reset error:', err); }
 }
 
@@ -889,6 +905,18 @@ function updateSceneTheme() {
     floorMesh.material.color = new THREE.Color(floorColor);
   }
 }
+
+// Caster dropdown change handler
+document.getElementById('caster-select').addEventListener('change', (e) => {
+  activeCasterGUID = Number(e.target.value);
+  const caster = characters.find(c => c.userData.guid == activeCasterGUID);
+  if (caster && caster.userData.unitData) {
+    updateSelfPanel(caster.userData.unitData);
+  }
+  // Rebuild enemy dropdown to exclude new caster
+  const units = characters.map(c => c.userData.unitData).filter(Boolean);
+  updateEnemyDropdown(units);
+});
 
 // Enemy dropdown change handler
 document.getElementById('enemy-select').addEventListener('change', (e) => {

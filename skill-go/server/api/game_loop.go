@@ -38,8 +38,9 @@ type Result struct {
 // ---------------------------------------------------------------------------
 
 type castPayload struct {
-	SpellID   uint32
-	TargetIDs []uint64
+	CasterGUID uint64
+	SpellID    uint32
+	TargetIDs  []uint64
 }
 
 type pushbackPayload struct {
@@ -129,6 +130,8 @@ func NewGameLoop(fileSink *trace.FileSink, dataDir string) *GameLoop {
 
 	warrior := unit.NewUnit(2, "Warrior", 10000, 5000)
 	warrior.SetLevel(60)
+	warrior.MaxRage = 100
+	warrior.PrimaryPowerType = spelldef.PowerTypeRage
 	warrior.Armor = 3000
 	warrior.Block = 15.0
 	warrior.BlockValue = 200
@@ -188,7 +191,7 @@ func NewGameLoop(fileSink *trace.FileSink, dataDir string) *GameLoop {
 		nextGUID:     100,
 	}
 
-	effect.RegisterExtended(store, makeAuraHandler(auraProvider), nil)
+	effect.RegisterExtended(store, makeAuraHandler(auraProvider), gl.makeTriggerSpellHandler())
 	gl.initSpellBook()
 
 	return gl
@@ -205,6 +208,38 @@ func (gl *GameLoop) initSpellBook() {
 		if spells[i].ID >= gl.nextSpellID {
 			gl.nextSpellID = spells[i].ID + 1
 		}
+	}
+}
+
+// makeTriggerSpellHandler returns a callback that casts a triggered spell on targets.
+// It is called from effect handlers (which run inside the event loop goroutine).
+func (gl *GameLoop) makeTriggerSpellHandler() effect.TriggerSpellHandler {
+	return func(caster *unit.Unit, spellID uint32, targets []*unit.Unit) {
+		spellInfo := gl.findSpell(spellID)
+		if spellInfo == nil {
+			gl.tr.Event(trace.SpanEffectHit, "trigger_spell_not_found", 0, "", map[string]interface{}{
+				"triggerSpellID": spellID,
+			})
+			return
+		}
+
+		castTrace := gl.newCastTrace()
+		ctx := spell.New(spellInfo.ID, spellInfo, caster, targets)
+		ctx.EffectStore = gl.store
+		ctx.HistoryProvider = gl.history
+		ctx.CooldownProvider = &tracingCooldownHistory{SpellHistory: gl.history}
+		ctx.AuraProvider = gl.auraProvider
+		ctx.ScriptRegistry = gl.registry
+		ctx.Trace = castTrace
+
+		castTrace.Event(trace.SpanSpell, "trigger_cast", spellInfo.ID, spellInfo.Name, map[string]interface{}{
+			"caster":  caster.Name,
+			"targets": len(targets),
+		})
+
+		ctx.Prepare()
+		ctx.Cast()
+
 	}
 }
 
@@ -324,6 +359,20 @@ func (gl *GameLoop) handleCast(cmd Command) {
 		return
 	}
 
+	// Resolve caster — use CasterGUID if specified, otherwise default caster
+	caster := gl.caster
+	if req.CasterGUID != 0 {
+		if u := gl.findUnit(req.CasterGUID); u != nil {
+			caster = u
+		}
+	}
+
+	// Check if caster is stunned
+	if caster.HasUnitState(spelldef.UnitStateStunned) {
+		reply(cmd, Result{Err: "caster is stunned"})
+		return
+	}
+
 	// Resolve targets
 	var targets []*unit.Unit
 	for _, guid := range req.TargetIDs {
@@ -340,7 +389,7 @@ func (gl *GameLoop) handleCast(cmd Command) {
 	castTrace := gl.newCastTrace()
 
 	// Create spell context
-	ctx := spell.New(spellInfo.ID, spellInfo, gl.caster, targets)
+	ctx := spell.New(spellInfo.ID, spellInfo, caster, targets)
 	ctx.EffectStore = gl.store
 	ctx.HistoryProvider = gl.history
 	ctx.CooldownProvider = &tracingCooldownHistory{SpellHistory: gl.history}
@@ -360,6 +409,7 @@ func (gl *GameLoop) handleCast(cmd Command) {
 	if ctx.CastDuration == 0 {
 		// Instant spell: execute immediately
 		result = ctx.Cast()
+
 		events := gl.collectAndResetEvents()
 		reply(cmd, Result{Data: gl.buildCastResponse(result, ctx, events)})
 		return
@@ -389,6 +439,16 @@ func (gl *GameLoop) handleCast(cmd Command) {
 func (gl *GameLoop) handleCastComplete(cmd Command) {
 	if gl.pending == nil {
 		reply(cmd, Result{Err: "no pending cast"})
+		return
+	}
+
+	// Check if caster was stunned during cast
+	if gl.caster.HasUnitState(spelldef.UnitStateStunned) {
+		pendingCtx := gl.pending.ctx
+		pendingCtx.Cancel()
+		gl.recorder.Reset()
+		gl.pending = nil
+		reply(cmd, Result{Data: gl.buildCastResponse(spelldef.CastResultFailed, pendingCtx, nil)})
 		return
 	}
 
@@ -660,10 +720,6 @@ func (gl *GameLoop) handleCreateSpell(cmd Command) {
 			AuraDuration:  ce.AuraDuration,
 			AuraType:      ce.AuraType,
 		}
-		if effects[i].EffectType == spelldef.SpellEffectEnergize {
-			effects[i].EnergizeType = spelldef.PowerTypeMana
-			effects[i].EnergizeAmount = ce.BasePoints
-		}
 	}
 
 	s := &spelldef.SpellInfo{
@@ -674,8 +730,17 @@ func (gl *GameLoop) handleCreateSpell(cmd Command) {
 		RecoveryTime:         req.Req.RecoveryTime,
 		CategoryRecoveryTime: req.Req.CategoryRecoveryTime,
 		PowerCost:            req.Req.PowerCost,
+		PowerType:            spelldef.PowerType(req.Req.PowerType),
 		MaxTargets:           req.Req.MaxTargets,
 		Effects:              effects,
+	}
+
+	// Energize effects inherit the spell PowerType
+	for i := range s.Effects {
+		if s.Effects[i].EffectType == spelldef.SpellEffectEnergize && s.Effects[i].EnergizeType == 0 {
+			s.Effects[i].EnergizeType = s.PowerType
+			s.Effects[i].EnergizeAmount = s.Effects[i].BasePoints
+		}
 	}
 
 	gl.spellBook = append(gl.spellBook, s)

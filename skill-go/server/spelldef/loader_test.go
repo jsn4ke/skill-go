@@ -8,8 +8,8 @@ import (
 
 func TestLoadSpells_Fireball(t *testing.T) {
 	dir := t.TempDir()
-	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,rangeYards\n"+
-		"38692,火球术,fire,3500,0,1500,465,35\n")
+	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,powerType,rangeYards\n"+
+		"38692,火球术,fire,3500,0,1500,465,,35\n")
 	writeCSV(t, filepath.Join(dir, "spell_effects.csv"), "spellId,index,type,school,value,tickInterval,duration\n"+
 		"38692,0,school_damage,fire,717,,\n"+
 		"38692,1,apply_aura,fire,21,2000,8000\n")
@@ -51,12 +51,12 @@ func TestLoadSpells_Fireball(t *testing.T) {
 
 func TestLoadSpells_MultipleSpells(t *testing.T) {
 	dir := t.TempDir()
-	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,rangeYards\n"+
-		"38692,火球术,fire,3500,0,1500,465,35\n"+
-		"27088,冰霜新星,frost,0,25000,1500,185,0\n")
+	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,powerType,rangeYards\n"+
+		"38692,火球术,fire,3500,0,1500,465,,35\n"+
+		"100,冲锋,physical,0,15000,0,0,1,25\n")
 	writeCSV(t, filepath.Join(dir, "spell_effects.csv"), "spellId,index,type,school,value,tickInterval,duration\n"+
 		"38692,0,school_damage,fire,717,,\n"+
-		"27088,0,school_damage,frost,99,,\n")
+		"100,0,charge,physical,1,,\n")
 
 	spells, err := LoadSpells(dir)
 	if err != nil {
@@ -76,8 +76,8 @@ func TestLoadSpells_FileNotFound(t *testing.T) {
 
 func TestLoadSpells_UnknownSchool(t *testing.T) {
 	dir := t.TempDir()
-	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,rangeYards\n"+
-		"1,test,invalid,0,0,0,0,0\n")
+	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,powerType,rangeYards\n"+
+		"1,test,invalid,0,0,0,0,,0\n")
 
 	_, err := LoadSpells(dir)
 	if err == nil {
@@ -87,8 +87,8 @@ func TestLoadSpells_UnknownSchool(t *testing.T) {
 
 func TestLoadSpells_UnknownEffectType(t *testing.T) {
 	dir := t.TempDir()
-	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,rangeYards\n"+
-		"1,test,fire,0,0,0,0,0\n")
+	writeCSV(t, filepath.Join(dir, "spells.csv"), "spellId,name,school,castTime,cooldown,gcd,manaCost,powerType,rangeYards\n"+
+		"1,test,fire,0,0,0,0,,0\n")
 	writeCSV(t, filepath.Join(dir, "spell_effects.csv"), "spellId,index,type,school,value,tickInterval,duration\n"+
 		"1,0,invalid_type,,,,\n")
 

@@ -92,6 +92,16 @@ export function createCharacter(unitData) {
   group.add(levelLabel);
   group.userData.levelLabel = levelLabel;
 
+  // Stun indicator (hidden by default)
+  const stunDiv = document.createElement('div');
+  stunDiv.className = 'char-stun-label';
+  stunDiv.textContent = '眩晕';
+  stunDiv.style.display = 'none';
+  const stunLabel = new CSS2DObject(stunDiv);
+  stunLabel.position.set(0, 5.2, 0);
+  group.add(stunLabel);
+  group.userData.stunLabel = stunLabel;
+
   addToScene(group);
   return group;
 }
@@ -115,10 +125,13 @@ export function updateCharacter(group, unitData) {
     const mpFill = barEl.querySelector('.bar-mp');
     const mpVal = barEl.querySelector('.mp-val');
     if (mpFill && mpVal) {
-      const pct = unitData.maxMana > 0 ? (unitData.mana / unitData.maxMana) * 100 : 0;
+      const isRage = (unitData.maxRage > 0);
+      const current = isRage ? unitData.rage : unitData.mana;
+      const max = isRage ? unitData.maxRage : unitData.maxMana;
+      const pct = max > 0 ? (current / max) * 100 : 0;
       mpFill.style.width = Math.max(0, pct) + '%';
-      mpFill.className = 'bar-fill bar-mp ' + hpTier(pct);
-      mpVal.textContent = `${unitData.mana}/${unitData.maxMana}`;
+      mpFill.className = 'bar-fill ' + (isRage ? 'bar-rage ' : 'bar-mp ') + hpTier(pct);
+      mpVal.textContent = `${current}/${max}`;
     }
   }
 
@@ -141,6 +154,13 @@ export function updateCharacter(group, unitData) {
     group.position.x = unitData.position.X;
     group.position.z = unitData.position.Z || 0;
   }
+
+  // Stun indicator — show if unit has debuff auras
+  const stunEl = d.stunLabel?.element;
+  if (stunEl) {
+    const hasDebuff = unitData.auras?.some(a => a.auraType === 1) || false;
+    stunEl.style.display = hasDebuff ? 'block' : 'none';
+  }
 }
 
 export function removeCharacter(group) {
@@ -158,11 +178,13 @@ export function removeCharacter(group) {
 // ---- Movement ----
 
 const MOVE_SPEED = 10; // units per second
+const CHARGE_SPEED = 40; // charge sprint speed
 
-// Set target position for smooth movement
-export function moveUnit(group, x, z) {
+// Set target position for smooth movement (speed defaults to MOVE_SPEED)
+export function moveUnit(group, x, z, speed) {
   if (!group) return;
   group.userData.targetPosition = new THREE.Vector3(x, 0, z);
+  group.userData.moveSpeed = speed || MOVE_SPEED;
   group.userData.isMoving = true;
 }
 
@@ -183,10 +205,11 @@ export function updateUnitMovement(group, dt) {
     current.z = target.z;
     d.targetPosition = null;
     d.isMoving = false;
+    d.moveSpeed = null;
     return;
   }
 
-  const step = MOVE_SPEED * dt;
+  const step = (d.moveSpeed || MOVE_SPEED) * dt;
   const ratio = Math.min(step / dist, 1);
   current.x += dx * ratio;
   current.z += dz * ratio;

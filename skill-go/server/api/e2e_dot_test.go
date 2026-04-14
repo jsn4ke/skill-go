@@ -51,9 +51,9 @@ func TestE2E_FireballDoT(t *testing.T) {
 	auraHandler(fakeCtx, fireballEffect, target)
 
 	// Verify aura was applied to target's aura manager
-	a, ok := targetAuraMgr.Auras[9001] // SpellID = EffectIndex + 9000 = 9001
+	a, ok := targetAuraMgr.Auras[38692] // SpellID = spellID from context
 	if !ok {
-		t.Fatal("aura not found in target's aura manager (key 9001)")
+		t.Fatal("aura not found in target's aura manager (key 38692)")
 	}
 
 	// Verify aura has correct fields

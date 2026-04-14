@@ -1,6 +1,8 @@
 package effect
 
 import (
+	"math"
+
 	"skill-go/server/combat"
 	"skill-go/server/spelldef"
 	"skill-go/server/trace"
@@ -65,6 +67,9 @@ func RegisterDefaults(store *Store) {
 
 	store.RegisterLaunch(spelldef.SpellEffectHeal, handleHealLaunch)
 	store.RegisterHit(spelldef.SpellEffectHeal, handleHealHit)
+
+	store.RegisterLaunch(spelldef.SpellEffectCharge, handleChargeLaunch)
+	store.RegisterHit(spelldef.SpellEffectCharge, handleChargeHit)
 }
 
 func handleSchoolDamageLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
@@ -120,5 +125,41 @@ func handleHealHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Un
 		"target": target.Name,
 		"amount": healAmount,
 		"hp":     target.Health,
+	})
+}
+
+func handleChargeLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
+	ctx.GetTrace().Event(trace.SpanEffectLaunch, "charge_launch", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"offset": eff.BasePoints,
+	})
+}
+
+func handleChargeHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
+	caster := ctx.Caster()
+	offset := float64(eff.BasePoints)
+	if offset <= 0 {
+		offset = 1.0
+	}
+
+	dx := caster.Position.X - target.Position.X
+	dz := caster.Position.Z - target.Position.Z
+	dist := math.Sqrt(dx*dx + dz*dz)
+	if dist == 0 {
+		dist = 1
+	}
+	nx := dx / dist
+	nz := dz / dist
+
+	caster.Position = unit.Position{
+		X: target.Position.X + nx*offset,
+		Y: 0,
+		Z: target.Position.Z + nz*offset,
+	}
+
+	ctx.GetTrace().Event(trace.SpanEffectHit, "charge_teleport", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
+		"caster":  caster.Name,
+		"target":  target.Name,
+		"offset":  offset,
+		"newPos":  map[string]float64{"x": caster.Position.X, "z": caster.Position.Z},
 	})
 }

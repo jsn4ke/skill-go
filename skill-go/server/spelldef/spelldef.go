@@ -27,6 +27,7 @@ const (
 	SpellEffectTriggerSpell  SpellEffectType = 4
 	SpellEffectEnergize      SpellEffectType = 5
 	SpellEffectWeaponDamage  SpellEffectType = 6
+	SpellEffectCharge        SpellEffectType = 7
 )
 
 // CastResult represents the outcome of a cast attempt.
@@ -49,13 +50,14 @@ type SpellEffectInfo struct {
 	TargetB       TargetReference
 
 	// Extended fields (Phase 1)
-	TriggerSpellID uint32    // for SpellEffectTriggerSpell
-	EnergizeType   PowerType // for SpellEffectEnergize
-	EnergizeAmount int32     // for SpellEffectEnergize
-	WeaponPercent  float64   // for SpellEffectWeaponDamage
-	AuraType           int32     // for SpellEffectApplyAura
-	AuraDuration       int32     // for SpellEffectApplyAura (ms)
-	PeriodicTickInterval int32   // ms between periodic ticks (DoT/HoT), 0 = not periodic
+	TriggerSpellID      uint32    // for SpellEffectTriggerSpell
+	EnergizeType        PowerType // for SpellEffectEnergize
+	EnergizeAmount      int32     // for SpellEffectEnergize
+	WeaponPercent       float64   // for SpellEffectWeaponDamage
+	AuraType            int32     // for SpellEffectApplyAura (0=buff, 1=debuff)
+	AuraDuration        int32     // for SpellEffectApplyAura (ms)
+	PeriodicTickInterval int32    // ms between periodic ticks (DoT/HoT), 0 = not periodic
+	MiscValue           int32     // for SpellEffectApplyAura (e.g., UnitStateStunned=4)
 }
 
 // TargetReference describes how to select targets for an effect.
@@ -94,7 +96,8 @@ type SpellInfo struct {
 	RangeMin       float64
 	RangeMax       float64
 	MaxTargets     int
-	PowerCost      int32 // mana cost
+	PowerCost      int32 // mana/rage cost
+	PowerType      PowerType // 0=mana, 1=rage
 	Effects        []SpellEffectInfo
 	IsAutoRepeat   bool
 	PreventionType PreventionType
@@ -160,6 +163,7 @@ const (
 	CastErrNoCharges       CastError = 13
 	CastErrOnGCD           CastError = 14
 	CastErrInterrupted     CastError = 15
+	CastErrNoRage          CastError = 16
 )
 
 // CombatResult represents the outcome of a hit resolution roll.

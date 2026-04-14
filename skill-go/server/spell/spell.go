@@ -152,21 +152,42 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 	}
 
 	if s.Info.PowerCost > 0 {
-		if !s.Caster.ConsumeMana(s.Info.PowerCost) {
-			s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
-				"reason":     "no_mana",
-				"need":       s.Info.PowerCost,
-				"have":       s.Caster.Mana + s.Info.PowerCost,
+		var paid bool
+		switch s.Info.PowerType {
+		case spelldef.PowerTypeRage:
+			paid = s.Caster.ConsumeRage(s.Info.PowerCost)
+			if !paid {
+				s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+					"reason": "no_rage",
+					"need":   s.Info.PowerCost,
+					"have":   s.Caster.Rage + s.Info.PowerCost,
+				})
+				s.LastCastErr = spelldef.CastErrNoRage
+				s.State = StateFinished
+				return spelldef.CastResultFailed
+			}
+			s.Trace.Event(trace.SpanSpell, "rage_consumed", spellID, spellName, map[string]interface{}{
+				"amount":    s.Info.PowerCost,
+				"remaining": s.Caster.Rage,
 			})
-			s.LastCastErr = spelldef.CastErrNoMana
-			s.State = StateFinished
-			return spelldef.CastResultFailed
+		default:
+			paid = s.Caster.ConsumeMana(s.Info.PowerCost)
+			if !paid {
+				s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
+					"reason":     "no_mana",
+					"need":       s.Info.PowerCost,
+					"have":       s.Caster.Mana + s.Info.PowerCost,
+				})
+				s.LastCastErr = spelldef.CastErrNoMana
+				s.State = StateFinished
+				return spelldef.CastResultFailed
+			}
+			s.Trace.Event(trace.SpanSpell, "mana_consumed", spellID, spellName, map[string]interface{}{
+				"amount":    s.Info.PowerCost,
+				"remaining": s.Caster.Mana,
+			})
 		}
-		s.ManaPaid = true
-		s.Trace.Event(trace.SpanSpell, "mana_consumed", spellID, spellName, map[string]interface{}{
-			"amount":    s.Info.PowerCost,
-			"remaining": s.Caster.Mana,
-		})
+		s.ManaPaid = paid
 	}
 
 	// Apply cast time modifier chain
@@ -745,14 +766,26 @@ func (s *SpellContext) TriggerHitProc(target *unit.Unit) {
 
 func (s *SpellContext) refundMana() {
 	if s.ManaPaid && s.Info.PowerCost > 0 {
-		s.Caster.Mana += s.Info.PowerCost
-		if s.Caster.Mana > s.Caster.MaxMana {
-			s.Caster.Mana = s.Caster.MaxMana
+		switch s.Info.PowerType {
+		case spelldef.PowerTypeRage:
+			s.Caster.Rage += s.Info.PowerCost
+			if s.Caster.Rage > s.Caster.MaxRage {
+				s.Caster.Rage = s.Caster.MaxRage
+			}
+			s.Trace.Event(trace.SpanSpell, "rage_refunded", s.Info.ID, s.Info.Name, map[string]interface{}{
+				"amount":    s.Info.PowerCost,
+				"remaining": s.Caster.Rage,
+			})
+		default:
+			s.Caster.Mana += s.Info.PowerCost
+			if s.Caster.Mana > s.Caster.MaxMana {
+				s.Caster.Mana = s.Caster.MaxMana
+			}
+			s.Trace.Event(trace.SpanSpell, "mana_refunded", s.Info.ID, s.Info.Name, map[string]interface{}{
+				"amount":    s.Info.PowerCost,
+				"remaining": s.Caster.Mana,
+			})
 		}
-		s.Trace.Event(trace.SpanSpell, "mana_refunded", s.Info.ID, s.Info.Name, map[string]interface{}{
-			"amount":    s.Info.PowerCost,
-			"remaining": s.Caster.Mana,
-		})
 		s.ManaPaid = false
 	}
 }

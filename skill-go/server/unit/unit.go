@@ -21,6 +21,9 @@ type Unit struct {
 	MaxHealth int32
 	Mana      int32
 	MaxMana   int32
+	Rage      int32
+	MaxRage   int32
+	PrimaryPowerType spelldef.PowerType
 	Alive     bool
 	Position  Position
 
@@ -120,6 +123,23 @@ func (u *Unit) RestoreMana(amount int32) {
 	u.Mana += amount
 	if u.Mana > u.MaxMana {
 		u.Mana = u.MaxMana
+	}
+}
+
+// ConsumeRage reduces rage if available, returns true if successful.
+func (u *Unit) ConsumeRage(amount int32) bool {
+	if u.Rage < amount {
+		return false
+	}
+	u.Rage -= amount
+	return true
+}
+
+// RestoreRage increases rage up to max.
+func (u *Unit) RestoreRage(amount int32) {
+	u.Rage += amount
+	if u.Rage > u.MaxRage {
+		u.Rage = u.MaxRage
 	}
 }
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>skill-go 3D Battle Demo</title>
-  <link rel="stylesheet" href="/style.css?v=9">
+  <link rel="stylesheet" href="/style.css?v=10">
   <script type="importmap">
   {
     "imports": {
@@ -36,6 +36,9 @@
         <span class="panel-collapse-btn">&minus;</span>
       </div>
       <div class="panel-body">
+        <select id="caster-select" class="enemy-dropdown" style="margin-bottom:4px">
+          <option value="1">Mage</option>
+        </select>
         <div id="self-name" class="panel-name">Mage</div>
         <div id="self-level" class="panel-level">Lv60</div>
         <div class="panel-bar-row">
@@ -167,6 +170,6 @@
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=13"></script>
+  <script type="module" src="/app.js?v=15"></script>
 </body>
 </html>

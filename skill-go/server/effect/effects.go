@@ -61,11 +61,23 @@ func handleEnergizeLaunch(ctx CasterInfo, eff spelldef.SpellEffectInfo) {
 }
 
 func handleEnergizeHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
-	target.RestoreMana(eff.EnergizeAmount)
+	// Energize with rage applies to caster (e.g. Charge), others apply to target
+	receiver := target
+	if eff.EnergizeType == spelldef.PowerTypeRage {
+		receiver = ctx.Caster()
+	}
+	switch eff.EnergizeType {
+	case spelldef.PowerTypeRage:
+		receiver.RestoreRage(eff.EnergizeAmount)
+	default:
+		receiver.RestoreMana(eff.EnergizeAmount)
+	}
 	ctx.GetTrace().Event(trace.SpanEffectHit, "energize_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"target": target.Name,
-		"amount": eff.EnergizeAmount,
-		"mana":   target.Mana,
+		"target":   receiver.Name,
+		"amount":   eff.EnergizeAmount,
+		"mana":     receiver.Mana,
+		"rage":     receiver.Rage,
+		"powerType": eff.EnergizeType,
 	})
 }
 

@@ -95,3 +95,66 @@ effects:
     value: 40
     duration: 1800000
     pvpMultiplier: 1
+
+---
+
+# spell=100 冲锋
+spellId: 100
+name: 冲锋
+nameEn: Charge
+icon: ability_warrior_charge
+school: physical
+mechanic: ""
+dispelType: ""
+gcdCategory: ""
+duration: 0
+manaCost: 0
+range: "8-25码 (近战)"
+rangeYards: 25
+castTime: 0
+cooldown: 15000
+gcd: 0
+flags:
+  - 是技能
+  - 形变时无法使用
+  - 不自动收剑
+  - 战斗中不可用
+  - 无视无敌效果
+  - 不产生仇恨
+  - 冲锋到目标时自动攻击
+effects:
+  - index: 0
+    type: charge
+    value: 1
+  - index: 1
+    type: dummy
+    value: 90
+  - index: 2
+    type: trigger_spell
+    value: 0
+    triggerSpellId: 7922  # Charge Stun
+
+---
+
+# spell=7922 冲锋眩晕
+spellId: 7922
+name: 冲锋眩晕
+nameEn: Charge Stun
+icon: ability_warrior_charge
+school: physical
+mechanic: stun
+dispelType: ""
+gcdCategory: ""
+duration: 1500
+manaCost: 0
+range: "8-25码"
+rangeYards: 25
+castTime: 0
+cooldown: 0
+gcd: 0
+flags: []
+effects:
+  - index: 0
+    type: apply_aura
+    auraType: stun
+    duration: 1500

@@ -22,8 +22,9 @@ import (
 
 // CastRequest is the JSON body for POST /api/cast.
 type CastRequest struct {
-	SpellID   uint32   `json:"spellID"`
-	TargetIDs []uint64 `json:"targetIDs"`
+	CasterGUID uint64   `json:"casterGuid"`
+	SpellID    uint32   `json:"spellID"`
+	TargetIDs  []uint64 `json:"targetIDs"`
 }
 
 // UnitJSON represents a unit's state for the API.
@@ -34,6 +35,9 @@ type UnitJSON struct {
 	MaxHealth   int32              `json:"maxHealth"`
 	Mana        int32              `json:"mana"`
 	MaxMana     int32              `json:"maxMana"`
+	Rage        int32              `json:"rage"`
+	MaxRage     int32              `json:"maxRage"`
+	PowerType   int32              `json:"powerType"`
 	Alive       bool               `json:"alive"`
 	Level       uint8              `json:"level"`
 	TeamID      uint32             `json:"teamId"`
@@ -167,7 +171,8 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 	}
 	return UnitJSON{
 		GUID: u.GUID, Name: u.Name, Health: u.Health, MaxHealth: u.MaxHealth,
-		Mana: u.Mana, MaxMana: u.MaxMana, Alive: u.Alive, Level: u.Level,
+		Mana: u.Mana, MaxMana: u.MaxMana, Rage: u.Rage, MaxRage: u.MaxRage,
+		PowerType: int32(u.PrimaryPowerType), Alive: u.Alive, Level: u.Level,
 		TeamID: u.TeamID, Armor: u.Armor, Resistances: resistances,
 		Str: u.Str, Agi: u.Agi, Sta: u.Sta, Int: u.Int, Spi: u.Spi,
 		AttackPower: u.AttackPower, SpellPower: u.SpellPower,
@@ -311,7 +316,7 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 			return
 		}
 		a := &aura.Aura{
-			SpellID:    uint32(eff.EffectIndex) + 9000,
+			SpellID:    ctx.GetSpellID(),
 			SourceName: ctx.GetSpellName(),
 			CasterGUID: ctx.Caster().GUID,
 			Caster:     ctx.Caster(),
@@ -319,7 +324,7 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 			Duration:   eff.AuraDuration,
 			StackAmount: 1,
 			Effects: []*aura.AuraEffect{
-				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, PeriodicTimer: eff.PeriodicTickInterval},
+				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, MiscValue: eff.MiscValue, PeriodicTimer: eff.PeriodicTickInterval},
 			},
 		}
 		mgr.ApplyAura(a, ctx.GetTrace(), ctx.GetSpellID(), ctx.GetSpellName())
@@ -374,6 +379,7 @@ type CreateSpellRequest struct {
 	RecoveryTime         int32                 `json:"cooldown"`
 	CategoryRecoveryTime int32                 `json:"categoryCD"`
 	PowerCost            int32                 `json:"powerCost"`
+	PowerType            int32                 `json:"powerType"`
 	MaxTargets           int                   `json:"maxTargets"`
 	Effects              []CreateEffectRequest `json:"effects"`
 }
@@ -479,8 +485,9 @@ func handleCast(gl *GameLoop) http.HandlerFunc {
 		}
 
 		result := gl.Send(Command{Op: "cast", Payload: castPayload{
-			SpellID:   req.SpellID,
-			TargetIDs: req.TargetIDs,
+			CasterGUID: req.CasterGUID,
+			SpellID:    req.SpellID,
+			TargetIDs:  req.TargetIDs,
 		}})
 
 		if result.Err != "" {

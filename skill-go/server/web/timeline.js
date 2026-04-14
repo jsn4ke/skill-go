@@ -1,5 +1,8 @@
 // timeline.js — Maps trace events to 3D animations with proper sequencing
 import { spawnProjectile, spawnMeleeArc, spawnDamageNumber, spawnHealNumber, spawnHealBeam, flashHit, spawnCastGlow, spawnAuraRing, SCHOOL_COLORS } from './vfx.js';
+import { moveUnit } from './character.js';
+
+const CHARGE_SPEED = 40;
 
 // CombatResult enum from Go (must match spelldef.CombatResult)
 const RESULT = {
@@ -158,6 +161,16 @@ export function processEvents(events, characters, casterGUID, selectedTargetGUID
           const schoolName = SCHOOL_MASK_TO_NAME[lastSchoolMask] || 'Arcane';
           const color = SCHOOL_COLORS[schoolName] || 0x44ff44;
           setTimeout(() => spawnAuraRing(targetGroup, color), 500);
+        }
+        continue;
+      }
+
+      // Charge teleport — smooth sprint instead of instant snap
+      if (span === 'effect_hit' && event === 'charge_teleport') {
+        const casterName = fields.caster;
+        const casterChar = findCharacterByName(characters, casterName);
+        if (casterChar && fields.newPos) {
+          moveUnit(casterChar, fields.newPos.x, fields.newPos.z, CHARGE_SPEED);
         }
         continue;
       }
