@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"skill-go/server/api"
@@ -46,7 +47,17 @@ func runHTTPServer(addr string) {
 		fmt.Fprintf(os.Stderr, "warning: file logging disabled: %v\n", err)
 	}
 
-	gl := api.NewGameLoop(fileSink, "server/data")
+	// Resolve data dir: try "data/" first (go run from server/), then "server/data/" (from project root)
+	dataDir := "data"
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		dataDir = "server/data"
+	}
+	dataDir, err = filepath.Abs(dataDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to resolve data dir: %v\n", err)
+		os.Exit(1)
+	}
+	gl := api.NewGameLoop(fileSink, dataDir)
 	gl.Start()
 	srv := api.NewServer(addr, gl)
 	fmt.Printf("=== skill-go Spell Demo ===\n")

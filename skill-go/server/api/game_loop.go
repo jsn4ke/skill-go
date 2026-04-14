@@ -818,11 +818,14 @@ func (gl *GameLoop) handleAuraUpdate(cmd Command) {
 						}
 						if target != nil && target.Alive {
 							target.TakeDamage(eff.BaseAmount)
-							t.Event(trace.SpanAura, "periodic_damage", a.SpellID, a.SourceName, map[string]interface{}{
-								"target":  target.Name,
-								"damage":  eff.BaseAmount,
-								"tick":    eff.AppliedTicks + i + 1,
-							})
+								t.Event(trace.SpanAura, "periodic_damage", a.SpellID, a.SourceName, map[string]interface{}{
+									"target":     target.Name,
+									"targetGUID": target.GUID,
+									"damage":     eff.BaseAmount,
+									"tick":       eff.AppliedTicks + i + 1,
+									"hp":         target.Health,
+									"maxHP":      target.MaxHealth,
+								})
 						}
 					}
 					eff.AppliedTicks = expectedTicks

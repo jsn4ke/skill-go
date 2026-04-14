@@ -97,6 +97,16 @@ async function init() {
   setOnCooldownStart((spellID, duration) => startCooldown(spellID, duration));
   addUpdatable({ update(dt) { for (const c of characters) updateUnitMovement(c, dt); updateSelectionRingPosition(); } });
 
+  // Subscribe to SSE for real-time unit state updates (DoT/HoT ticks, aura removals)
+  const sseSub = netClient.subscribe('/api/trace/stream', (event) => {
+    console.log('[SSE]', event.span, event.event, event.fields);
+    if (event.span === 'aura' && event.event === 'periodic_damage') {
+      handlePeriodicDamage(event);
+    }
+  });
+  sseSub.onReconnect = (status) => console.log('[SSE]', status);
+  console.log('[SSE] subscription created for /api/trace/stream');
+
   // Initialize draggable/collapsible panels
   initPanel('spell-log');
   initPanel('self-panel');
@@ -382,6 +392,34 @@ function hideCastBar() {
   document.getElementById('cast-bar').classList.add('hidden');
   // Re-enable buttons that aren't on cooldown
   document.querySelectorAll('.spell-btn').forEach(b => b.disabled = false);
+}
+
+// ---- SSE: Periodic Damage ----
+function handlePeriodicDamage(event) {
+  const f = event.fields || {};
+  const guid = f.targetGUID;
+  console.log('[DoT] received', f);
+  if (guid == null) { console.warn('[DoT] no targetGUID in event'); return; }
+
+  const group = characters.find(c => c.userData.guid == guid);
+  if (!group) { console.warn('[DoT] no character for guid', guid, 'chars:', characters.map(c => c.userData.guid)); return; }
+
+  const ud = group.userData.unitData;
+  if (!ud) { console.warn('[DoT] no unitData for group'); return; }
+
+  ud.health = f.hp ?? ud.health;
+  ud.maxHealth = f.maxHP ?? ud.maxHealth;
+  console.log('[DoT] updated HP to', ud.health, '/', ud.maxHealth);
+
+  updateCharacter(group, ud);
+
+  if (guid == selectedTargetGUID) {
+    updateEnemyInfo(ud);
+    updateTargetLock(ud);
+  }
+
+  stats.damage += f.damage || 0;
+  document.getElementById('stat-damage').textContent = stats.damage;
 }
 
 function processCastResult(result, spellID, targetGUID) {
