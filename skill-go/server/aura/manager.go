@@ -11,8 +11,8 @@ import (
 
 // AuraManager manages all auras on a unit.
 type AuraManager struct {
-	Owner  *unit.Unit
-	Auras  map[uint32]*Aura // keyed by spellID
+	Owner *unit.Unit
+	Auras map[uint32]*Aura // keyed by spellID
 }
 
 // NewAuraManager creates an AuraManager for a unit.
@@ -33,16 +33,16 @@ func (m *AuraManager) ApplyAura(aura *Aura, t *trace.Trace, spellID uint32, spel
 			existing.StackAmount++
 		} else {
 			t.Event(trace.SpanAura, "refreshed", spellID, spellName, map[string]interface{}{
-				"target":  m.Owner.Name,
-				"auraID":  aura.SpellID,
+				"target": m.Owner.Name,
+				"auraID": aura.SpellID,
 			})
 			existing.Duration = aura.Duration
 			return
 		}
 		t.Event(trace.SpanAura, "stacked", spellID, spellName, map[string]interface{}{
-			"target":      m.Owner.Name,
-			"auraID":      aura.SpellID,
-			"stacks":      existing.StackAmount,
+			"target": m.Owner.Name,
+			"auraID": aura.SpellID,
+			"stacks": existing.StackAmount,
 		})
 		existing.Duration = aura.Duration
 		return
@@ -50,20 +50,20 @@ func (m *AuraManager) ApplyAura(aura *Aura, t *trace.Trace, spellID uint32, spel
 
 	if ok && existing.CasterGUID != aura.CasterGUID {
 		t.Event(trace.SpanAura, "replacing", spellID, spellName, map[string]interface{}{
-			"target":       m.Owner.Name,
-			"auraID":       aura.SpellID,
-			"oldCaster":    existing.CasterGUID,
-			"newCaster":    aura.CasterGUID,
+			"target":    m.Owner.Name,
+			"auraID":    aura.SpellID,
+			"oldCaster": existing.CasterGUID,
+			"newCaster": aura.CasterGUID,
 		})
 		m.RemoveAura(existing, RemoveModeDefault, t, spellID, spellName)
 	}
 
 	// Create application
 	app := &AuraApplication{
-		Target:         m.Owner,
-		RemoveMode:     RemoveModeDefault,
+		Target:           m.Owner,
+		RemoveMode:       RemoveModeDefault,
 		NeedClientUpdate: true,
-		TimerStart:     time.Now().UnixMilli(),
+		TimerStart:       time.Now().UnixMilli(),
 	}
 
 	aura.Applications = append(aura.Applications, app)
@@ -73,6 +73,9 @@ func (m *AuraManager) ApplyAura(aura *Aura, t *trace.Trace, spellID uint32, spel
 	for _, eff := range aura.Effects {
 		applyEffect(eff, m.Owner)
 	}
+
+	// Recalculate speed modifiers if any speed auras exist
+	recalcSpeedMod(m)
 
 	t.Event(trace.SpanAura, "applied", spellID, spellName, map[string]interface{}{
 		"target":   m.Owner.Name,
@@ -92,16 +95,19 @@ func (m *AuraManager) RemoveAura(aura *Aura, mode RemoveMode, t *trace.Trace, sp
 
 	app.RemoveMode = mode
 
-	// Remove aura effects
+	// Remove from map before recalculating speed modifiers
+	delete(m.Auras, aura.SpellID)
 	for _, eff := range aura.Effects {
 		removeEffect(eff, m.Owner)
 	}
 
-	delete(m.Auras, aura.SpellID)
+	// Recalculate speed modifiers (after deletion so this aura is no longer counted)
+	recalcSpeedMod(m)
+
 	t.Event(trace.SpanAura, "removed", spellID, spellName, map[string]interface{}{
-		"target":  m.Owner.Name,
-		"auraID":  aura.SpellID,
-		"mode":    mode,
+		"target": m.Owner.Name,
+		"auraID": aura.SpellID,
+		"mode":   mode,
 	})
 }
 
@@ -122,9 +128,9 @@ func (m *AuraManager) GetAura(spellID uint32) *Aura {
 type StackRule int
 
 const (
-	StackRefresh   StackRule = iota // refresh duration only
-	StackAddStack                    // add a stack
-	StackReplace                     // replace entirely
+	StackRefresh  StackRule = iota // refresh duration only
+	StackAddStack                  // add a stack
+	StackReplace                   // replace entirely
 )
 
 // --- Proc pipeline ---
@@ -192,10 +198,10 @@ func (m *AuraManager) checkProcForEffect(aura *Aura, eff *AuraEffect, event Proc
 	}
 
 	t.Event(trace.SpanProc, "check", spellID, spellName, map[string]interface{}{
-		"target":     m.Owner.Name,
-		"auraID":     aura.SpellID,
-		"procEvent":  int(event),
-		"remaining":  aura.RemainingProcs,
+		"target":    m.Owner.Name,
+		"auraID":    aura.SpellID,
+		"procEvent": int(event),
+		"remaining": aura.RemainingProcs,
 	})
 
 	return &ProcCheckResult{
@@ -247,6 +253,8 @@ func applyControlEffect(eff *AuraEffect, target *unit.Unit) {
 		target.ApplyUnitState(spelldef.UnitStateDisarmed)
 	case int32(spelldef.UnitStateStunned):
 		target.ApplyUnitState(spelldef.UnitStateStunned)
+	case AuraMiscModSpeed:
+		// Speed mod handled by recalculation after all effects applied
 	}
 }
 
@@ -258,7 +266,22 @@ func removeControlEffect(eff *AuraEffect, target *unit.Unit) {
 		target.RemoveUnitState(spelldef.UnitStateDisarmed)
 	case int32(spelldef.UnitStateStunned):
 		target.RemoveUnitState(spelldef.UnitStateStunned)
+	case AuraMiscModSpeed:
+		// Speed mod handled by recalculation after all effects removed
 	}
+}
+
+// recalcSpeedMod collects all speed-modifying auras and recomputes the target's SpeedMod.
+func recalcSpeedMod(mgr *AuraManager) {
+	var slows []int32
+	for _, a := range mgr.Auras {
+		for _, eff := range a.Effects {
+			if eff.MiscValue == AuraMiscModSpeed {
+				slows = append(slows, eff.BaseAmount)
+			}
+		}
+	}
+	mgr.Owner.RecalcSpeedMod(slows)
 }
 
 func findApplication(aura *Aura, target *unit.Unit) *AuraApplication {

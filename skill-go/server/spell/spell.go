@@ -16,12 +16,12 @@ import (
 type SpellState int
 
 const (
-	StateNone      SpellState = iota // 0: just created
-	StatePreparing                     // 1: casting bar in progress
-	StateLaunched                      // 2: spell launched, effects in flight
-	StateChanneling                    // 3: channeled spell active
-	StateFinished                      // 4: spell complete, awaiting cleanup
-	StateIdle                          // 5: waiting for auto-repeat trigger
+	StateNone       SpellState = iota // 0: just created
+	StatePreparing                    // 1: casting bar in progress
+	StateLaunched                     // 2: spell launched, effects in flight
+	StateChanneling                   // 3: channeled spell active
+	StateFinished                     // 4: spell complete, awaiting cleanup
+	StateIdle                         // 5: waiting for auto-repeat trigger
 )
 
 func (s SpellState) String() string {
@@ -45,9 +45,9 @@ func (s SpellState) String() string {
 
 // delayedHit holds a pending hit to be executed at a future time.
 type delayedHit struct {
-	target   *unit.Unit
-	eff      spelldef.SpellEffectInfo
-	hitAt    time.Time
+	target *unit.Unit
+	eff    spelldef.SpellEffectInfo
+	hitAt  time.Time
 }
 
 // SpellContext holds all information about an in-progress spell cast.
@@ -88,9 +88,9 @@ type SpellContext struct {
 	channelStop chan struct{}
 
 	// Empower spell
-	empowerStart   time.Time
-	empowerStage   int
-	empowerActive  bool
+	empowerStart    time.Time
+	empowerStage    int
+	empowerActive   bool
 	empowerReleased bool
 }
 
@@ -111,7 +111,7 @@ func New(id uint32, info *spelldef.SpellInfo, caster *unit.Unit, targets []*unit
 func (s *SpellContext) Prepare() spelldef.CastResult {
 	spellID, spellName := s.Info.ID, s.Info.Name
 	s.Trace.Event(trace.SpanSpell, "prepare", spellID, spellName, map[string]interface{}{
-		"state": s.State.String(),
+		"state":       s.State.String(),
 		"targetCount": len(s.Targets),
 	})
 
@@ -174,9 +174,9 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 			paid = s.Caster.ConsumeMana(s.Info.PowerCost)
 			if !paid {
 				s.Trace.Event(trace.SpanSpell, "prepare_failed", spellID, spellName, map[string]interface{}{
-					"reason":     "no_mana",
-					"need":       s.Info.PowerCost,
-					"have":       s.Caster.Mana + s.Info.PowerCost,
+					"reason": "no_mana",
+					"need":   s.Info.PowerCost,
+					"have":   s.Caster.Mana + s.Info.PowerCost,
 				})
 				s.LastCastErr = spelldef.CastErrNoMana
 				s.State = StateFinished
@@ -208,8 +208,8 @@ func (s *SpellContext) Prepare() spelldef.CastResult {
 	s.State = StatePreparing
 
 	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
-		"from": "None",
-		"to":   "Preparing",
+		"from":        "None",
+		"to":          "Preparing",
 		"castTime_ms": finalCastTime,
 	})
 
@@ -387,8 +387,8 @@ func (s *SpellContext) Finish() spelldef.CastResult {
 	if s.Info.IsAutoRepeat && !s.Cancelled {
 		s.State = StateIdle
 		s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
-			"from": s.State.String(),
-			"to":   "Idle",
+			"from":   s.State.String(),
+			"to":     "Idle",
 			"reason": "auto_repeat",
 		})
 	} else {
@@ -436,7 +436,7 @@ func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 func (s *SpellContext) ExecuteHit(target *unit.Unit, eff spelldef.SpellEffectInfo) {
 	if s.Cancelled || !target.IsAlive() {
 		s.Trace.Event(trace.SpanSpell, "delayed_hit_skipped", s.Info.ID, s.Info.Name, map[string]interface{}{
-			"cancelled":  s.Cancelled,
+			"cancelled":   s.Cancelled,
 			"targetAlive": target.IsAlive(),
 		})
 		return
@@ -679,6 +679,11 @@ func (s *SpellContext) GetDelayedHitSchedules() []DelayedHitSchedule {
 	return schedules
 }
 
+// SetTargets replaces the internal target slice. Used for per-tick re-resolution in channeled AoE spells.
+func (s *SpellContext) SetTargets(targets []*unit.Unit) {
+	s.Targets = targets
+}
+
 // ChannelStop returns the stop channel for the active channel.
 func (s *SpellContext) ChannelStop() chan struct{} {
 	return s.channelStop
@@ -799,11 +804,11 @@ type effectAdapter struct {
 	spellName string
 }
 
-func (a *effectAdapter) Caster() *unit.Unit             { return a.caster }
-func (a *effectAdapter) Targets() []*unit.Unit           { return a.targets }
-func (a *effectAdapter) GetTrace() *trace.Trace          { return a.trace }
-func (a *effectAdapter) GetSpellID() uint32              { return a.spellID }
-func (a *effectAdapter) GetSpellName() string            { return a.spellName }
+func (a *effectAdapter) Caster() *unit.Unit     { return a.caster }
+func (a *effectAdapter) Targets() []*unit.Unit  { return a.targets }
+func (a *effectAdapter) GetTrace() *trace.Trace { return a.trace }
+func (a *effectAdapter) GetSpellID() uint32     { return a.spellID }
+func (a *effectAdapter) GetSpellName() string   { return a.spellName }
 
 // String returns a debug representation.
 func (s *SpellContext) String() string {

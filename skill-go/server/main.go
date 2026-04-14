@@ -129,13 +129,13 @@ func runCLIDemo() {
 	// ===== INTEGRATION: Cast → Cooldown =====
 	fmt.Println("===== Integration: Cast → Cooldown =====")
 	cdSpell := &spelldef.SpellInfo{
-		ID:                    1001,
-		Name:                  "Fireball",
-		SchoolMask:            spelldef.SchoolMaskFire,
-		CastTime:              0,
-		RecoveryTime:          6000,
+		ID:                   1001,
+		Name:                 "Fireball",
+		SchoolMask:           spelldef.SchoolMaskFire,
+		CastTime:             0,
+		RecoveryTime:         6000,
 		CategoryRecoveryTime: 1500,
-		PowerCost:             0,
+		PowerCost:            0,
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, BasePoints: 100},
 		},
@@ -148,12 +148,12 @@ func runCLIDemo() {
 	// ===== INTEGRATION: Charges =====
 	fmt.Println("\n--- Charges integration ---")
 	chargeSpell := &spelldef.SpellInfo{
-		ID:            3001,
-		Name:          "ChargeSpell",
-		MaxCharges:    3,
-		CastTime:      0,
-		PowerCost:     0,
-		Effects:       []spelldef.SpellEffectInfo{},
+		ID:         3001,
+		Name:       "ChargeSpell",
+		MaxCharges: 3,
+		CastTime:   0,
+		PowerCost:  0,
+		Effects:    []spelldef.SpellEffectInfo{},
 	}
 	history.InitCharges(3001, 3, 20000)
 	fmt.Printf("  Charges before: %d\n", history.GetChargeRemaining(3001))
@@ -177,10 +177,10 @@ func runCLIDemo() {
 	fmt.Printf("  Proc aura applied, charges: %d\n", procAura.RemainingProcs)
 
 	procSpell := &spelldef.SpellInfo{
-		ID:         7001,
-		Name:       "ProcTriggerSpell",
-		CastTime:   0,
-		PowerCost:  0,
+		ID:        7001,
+		Name:      "ProcTriggerSpell",
+		CastTime:  0,
+		PowerCost: 0,
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, BasePoints: 50},
 		},
@@ -193,10 +193,10 @@ func runCLIDemo() {
 	// ===== INTEGRATION: ApplyAura effect =====
 	fmt.Println("\n===== Integration: ApplyAura Effect =====")
 	buffSpell := &spelldef.SpellInfo{
-		ID:         5001,
-		Name:       "ApplyBuffSpell",
-		CastTime:   0,
-		PowerCost:  0,
+		ID:        5001,
+		Name:      "ApplyBuffSpell",
+		CastTime:  0,
+		PowerCost: 0,
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectApplyAura, AuraType: int32(aura.AuraTypeBuff), AuraDuration: 10000},
 		},
@@ -213,10 +213,10 @@ func runCLIDemo() {
 		})
 	})
 	scriptedSpell := &spelldef.SpellInfo{
-		ID:         8001,
-		Name:       "ScriptedSpell",
-		CastTime:   0,
-		PowerCost:  0,
+		ID:        8001,
+		Name:      "ScriptedSpell",
+		CastTime:  0,
+		PowerCost: 0,
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage, BasePoints: 50},
 		},
@@ -232,7 +232,7 @@ func runCLIDemo() {
 		unit.NewUnit(4, "Unit4", 8000, 5000),
 		unit.NewUnit(5, "Unit5", 6000, 5000),
 	}
-	units[2].Position = unit.Position{X: 0, Y: 5, Z: 0}  // on the line
+	units[2].Position = unit.Position{X: 0, Y: 5, Z: 0}   // on the line
 	units[3].Position = unit.Position{X: 10, Y: 10, Z: 0} // off the line
 
 	world := &mockUnitProvider{units: units}
@@ -308,11 +308,11 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 			return
 		}
 		a := &aura.Aura{
-			SpellID:    uint32(eff.EffectIndex) + 9000,
-			CasterGUID: ctx.Caster().GUID,
-			Caster:     ctx.Caster(),
-			AuraType:   aura.AuraType(eff.AuraType),
-			Duration:   eff.AuraDuration,
+			SpellID:     uint32(eff.EffectIndex) + 9000,
+			CasterGUID:  ctx.Caster().GUID,
+			Caster:      ctx.Caster(),
+			AuraType:    aura.AuraType(eff.AuraType),
+			Duration:    eff.AuraDuration,
 			StackAmount: 1,
 			Effects: []*aura.AuraEffect{
 				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints},

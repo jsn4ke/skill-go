@@ -423,10 +423,10 @@ func TestFlow_CastCancelled(t *testing.T) {
 // the delayed hits complete.
 func TestFlow_DelayedHit(t *testing.T) {
 	info := &spelldef.SpellInfo{
-		ID:     105,
-		Name:   "DelayedFireball",
+		ID:       105,
+		Name:     "DelayedFireball",
 		CastTime: 0,
-		DelayMs: 50,
+		DelayMs:  50,
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage},
 		},

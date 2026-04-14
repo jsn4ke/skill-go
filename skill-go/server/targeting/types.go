@@ -6,29 +6,39 @@ import "skill-go/server/unit"
 type SelectCategory int
 
 const (
-	SelectSelf     SelectCategory = iota // caster is the target
-	SelectSingle                         // single explicit target
-	SelectFriendly                       // friendly units in range
-	SelectEnemy                          // enemy units in range
-	SelectArea                           // all units in an area
-	SelectCone                           // units in a cone
-	SelectChain                          // chain bounce between targets
-	SelectLine                           // line (rectangle) in front of caster
-	SelectTrajectory                     // parabolic trajectory between two points
+	SelectSelf       SelectCategory = iota // caster is the target
+	SelectSingle                           // single explicit target
+	SelectFriendly                         // friendly units in range
+	SelectEnemy                            // enemy units in range
+	SelectArea                             // all units in an area
+	SelectCone                             // units in a cone
+	SelectChain                            // chain bounce between targets
+	SelectLine                             // line (rectangle) in front of caster
+	SelectTrajectory                       // parabolic trajectory between two points
 )
 
 func (c SelectCategory) String() string {
 	switch c {
-	case SelectSelf: return "Self"
-	case SelectSingle: return "Single"
-	case SelectFriendly: return "Friendly"
-	case SelectEnemy: return "Enemy"
-	case SelectArea: return "Area"
-	case SelectCone: return "Cone"
-	case SelectChain: return "Chain"
-	case SelectLine: return "Line"
-	case SelectTrajectory: return "Trajectory"
-	default: return "Unknown"
+	case SelectSelf:
+		return "Self"
+	case SelectSingle:
+		return "Single"
+	case SelectFriendly:
+		return "Friendly"
+	case SelectEnemy:
+		return "Enemy"
+	case SelectArea:
+		return "Area"
+	case SelectCone:
+		return "Cone"
+	case SelectChain:
+		return "Chain"
+	case SelectLine:
+		return "Line"
+	case SelectTrajectory:
+		return "Trajectory"
+	default:
+		return "Unknown"
 	}
 }
 
@@ -36,17 +46,17 @@ func (c SelectCategory) String() string {
 type ReferenceFrame int
 
 const (
-	RefCaster  ReferenceFrame = iota // origin is the caster
-	RefTarget                        // origin is the explicit target
-	RefPosition                      // origin is a world position
-	RefDefault                       // use spell default
+	RefCaster   ReferenceFrame = iota // origin is the caster
+	RefTarget                         // origin is the explicit target
+	RefPosition                       // origin is a world position
+	RefDefault                        // use spell default
 )
 
 // ObjectType describes what kind of entity to select.
 type ObjectType int
 
 const (
-	ObjUnit       ObjectType = iota
+	ObjUnit ObjectType = iota
 	ObjGameObject
 	ObjCorpse
 	ObjItem
@@ -54,9 +64,9 @@ const (
 
 // ValidationRule defines filters and limits for target selection.
 type ValidationRule struct {
-	MaxTargets int      // maximum number of targets (0 = unlimited)
-	AliveOnly  bool     // only select living units
-	DeadOnly   bool     // only select dead units
+	MaxTargets int             // maximum number of targets (0 = unlimited)
+	AliveOnly  bool            // only select living units
+	DeadOnly   bool            // only select dead units
 	Conditions []ConditionFunc // additional filter conditions
 }
 
@@ -74,11 +84,11 @@ type Direction struct {
 
 // TargetDescriptor is the 5-dimension orthogonal description of target selection.
 type TargetDescriptor struct {
-	Category      SelectCategory
-	Reference     ReferenceFrame
-	ObjType       ObjectType
-	Validation    ValidationRule
-	Dir           Direction
+	Category   SelectCategory
+	Reference  ReferenceFrame
+	ObjType    ObjectType
+	Validation ValidationRule
+	Dir        Direction
 }
 
 // FilterFunc allows scripts to intercept and modify the target list.
@@ -88,16 +98,16 @@ type FilterFunc func(targets []*unit.Unit) []*unit.Unit
 type FilterPoint int
 
 const (
-	FilterArea   FilterPoint = iota // after area selection
-	FilterUnit                      // after unit-level validation
-	FilterDest                      // after destination validation
+	FilterArea FilterPoint = iota // after area selection
+	FilterUnit                    // after unit-level validation
+	FilterDest                    // after destination validation
 )
 
 // SelectionContext holds the context for a target selection operation.
 type SelectionContext struct {
-	Caster       *unit.Unit
+	Caster          *unit.Unit
 	ExplicitTargets []*unit.Unit
-	Descriptor   TargetDescriptor
-	OriginPos    unit.Position // override position for RefPosition
-	Filters      map[FilterPoint][]FilterFunc
+	Descriptor      TargetDescriptor
+	OriginPos       unit.Position // override position for RefPosition
+	Filters         map[FilterPoint][]FilterFunc
 }

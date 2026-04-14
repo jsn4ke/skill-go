@@ -23,21 +23,21 @@ func TestSelectArea(t *testing.T) {
 	caster.Position = unit.Position{X: 0, Y: 0, Z: 0}
 
 	units := []*unit.Unit{
-		unit.NewUnit(10, "Close", 100, 100),   // at origin
-		unit.NewUnit(11, "Medium", 100, 100),  // distance 5
-		unit.NewUnit(12, "Far", 100, 100),     // distance 15 (outside radius 10)
-		unit.NewUnit(13, "OnEdge", 100, 100),  // distance 10 (on boundary)
+		unit.NewUnit(10, "Close", 100, 100),  // at origin
+		unit.NewUnit(11, "Medium", 100, 100), // distance 5
+		unit.NewUnit(12, "Far", 100, 100),    // distance 15 (outside radius 10)
+		unit.NewUnit(13, "OnEdge", 100, 100), // distance 10 (on boundary)
 	}
 
-	units[0].Position = unit.Position{X: 0, Y: 0, Z: 0}       // dist 0
-	units[1].Position = unit.Position{X: 3, Y: 4, Z: 0}       // dist 5
-	units[2].Position = unit.Position{X: 12, Y: 9, Z: 0}      // dist 15
-	units[3].Position = unit.Position{X: 10, Y: 0, Z: 0}      // dist 10
+	units[0].Position = unit.Position{X: 0, Y: 0, Z: 0}  // dist 0
+	units[1].Position = unit.Position{X: 3, Y: 4, Z: 0}  // dist 5
+	units[2].Position = unit.Position{X: 12, Y: 9, Z: 0} // dist 15
+	units[3].Position = unit.Position{X: 10, Y: 0, Z: 0} // dist 10
 
 	provider := &mockUnitProvider{units: units}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 10},
@@ -72,23 +72,23 @@ func TestSelectCone(t *testing.T) {
 	halfAngle := math.Pi / 6 // 30 degrees
 
 	units := []*unit.Unit{
-		unit.NewUnit(10, "InFront", 100, 100),   // directly ahead (0, 5, 0) - in cone
+		unit.NewUnit(10, "InFront", 100, 100),     // directly ahead (0, 5, 0) - in cone
 		unit.NewUnit(11, "SlightlyOff", 100, 100), // (3, 6, 0) - small angle, in cone
-		unit.NewUnit(12, "FarAway", 100, 100),    // (0, 15, 0) - out of radius
-		unit.NewUnit(13, "Behind", 100, 100),     // (0, -5, 0) - behind caster
-		unit.NewUnit(14, "WideAngle", 100, 100),  // (8, 5, 0) - wide angle, out of cone
+		unit.NewUnit(12, "FarAway", 100, 100),     // (0, 15, 0) - out of radius
+		unit.NewUnit(13, "Behind", 100, 100),      // (0, -5, 0) - behind caster
+		unit.NewUnit(14, "WideAngle", 100, 100),   // (8, 5, 0) - wide angle, out of cone
 	}
 
-	units[0].Position = unit.Position{X: 0, Y: 5, Z: 0}    // angle=0, dist=5
-	units[1].Position = unit.Position{X: 3, Y: 6, Z: 0}    // angle ~26deg, dist ~6.7
-	units[2].Position = unit.Position{X: 0, Y: 15, Z: 0}   // dist=15 > radius=10
-	units[3].Position = unit.Position{X: 0, Y: -5, Z: 0}   // behind
-	units[4].Position = unit.Position{X: 8, Y: 5, Z: 0}    // angle ~58deg > 30deg
+	units[0].Position = unit.Position{X: 0, Y: 5, Z: 0}  // angle=0, dist=5
+	units[1].Position = unit.Position{X: 3, Y: 6, Z: 0}  // angle ~26deg, dist ~6.7
+	units[2].Position = unit.Position{X: 0, Y: 15, Z: 0} // dist=15 > radius=10
+	units[3].Position = unit.Position{X: 0, Y: -5, Z: 0} // behind
+	units[4].Position = unit.Position{X: 8, Y: 5, Z: 0}  // angle ~58deg > 30deg
 
 	provider := &mockUnitProvider{units: units}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectCone,
 			Dir:      Direction{Radius: 10, ConeAngle: halfAngle},
@@ -126,13 +126,13 @@ func TestSelectChain(t *testing.T) {
 	caster.Position = unit.Position{X: 0, Y: 0, Z: 0}
 
 	// Three targets close together. Chain should bounce to closest damaged target.
-	target1 := unit.NewUnit(10, "Target1", 50, 100)  // damaged (50/100 HP)
+	target1 := unit.NewUnit(10, "Target1", 50, 100) // damaged (50/100 HP)
 	target1.Position = unit.Position{X: 5, Y: 0, Z: 0}
 
-	target2 := unit.NewUnit(11, "Target2", 30, 100)  // most damaged (30/100 HP)
+	target2 := unit.NewUnit(11, "Target2", 30, 100) // most damaged (30/100 HP)
 	target2.Position = unit.Position{X: 10, Y: 0, Z: 0}
 
-	target3 := unit.NewUnit(12, "Target3", 80, 100)  // less damaged (80/100 HP)
+	target3 := unit.NewUnit(12, "Target3", 80, 100) // less damaged (80/100 HP)
 	target3.Position = unit.Position{X: 8, Y: 3, Z: 0}
 
 	provider := &mockUnitProvider{
@@ -187,12 +187,12 @@ func TestSelectLine(t *testing.T) {
 
 	// Caster faces +Y. Line: length=20, width=4 (halfWidth=2).
 	units := []*unit.Unit{
-		unit.NewUnit(10, "OnLine", 100, 100),      // (0, 10, 0) - on the line
-		unit.NewUnit(11, "OnLineFar", 100, 100),   // (0, 18, 0) - on the line near end
-		unit.NewUnit(12, "OffWidth", 100, 100),    // (3, 10, 0) - outside width
+		unit.NewUnit(10, "OnLine", 100, 100),       // (0, 10, 0) - on the line
+		unit.NewUnit(11, "OnLineFar", 100, 100),    // (0, 18, 0) - on the line near end
+		unit.NewUnit(12, "OffWidth", 100, 100),     // (3, 10, 0) - outside width
 		unit.NewUnit(13, "BeyondLength", 100, 100), // (0, 25, 0) - beyond length
-		unit.NewUnit(14, "Behind", 100, 100),      // (0, -5, 0) - behind caster
-		unit.NewUnit(15, "OnEdge", 100, 100),      // (1.9, 10, 0) - within width
+		unit.NewUnit(14, "Behind", 100, 100),       // (0, -5, 0) - behind caster
+		unit.NewUnit(15, "OnEdge", 100, 100),       // (1.9, 10, 0) - within width
 	}
 
 	units[0].Position = unit.Position{X: 0, Y: 10, Z: 0}   // on line, within width
@@ -200,12 +200,12 @@ func TestSelectLine(t *testing.T) {
 	units[2].Position = unit.Position{X: 3, Y: 10, Z: 0}   // perp dist = 3 > halfWidth(2)
 	units[3].Position = unit.Position{X: 0, Y: 25, Z: 0}   // along = 25 > length(20)
 	units[4].Position = unit.Position{X: 0, Y: -5, Z: 0}   // along = -5 < 0
-	units[5].Position = unit.Position{X: 1.9, Y: 10, Z: 0}  // perp dist = 1.9 <= halfWidth(2)
+	units[5].Position = unit.Position{X: 1.9, Y: 10, Z: 0} // perp dist = 1.9 <= halfWidth(2)
 
 	provider := &mockUnitProvider{units: units}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectLine,
 			Dir:      Direction{Length: 20, Width: 4},
@@ -251,13 +251,13 @@ func TestSelectTrajectory(t *testing.T) {
 	target.Position = unit.Position{X: 0, Y: 20, Z: 0}
 
 	onPath := unit.NewUnit(10, "OnPath", 100, 100)
-	onPath.Position = unit.Position{X: 0, Y: 10, Z: 0}  // directly on the line
+	onPath.Position = unit.Position{X: 0, Y: 10, Z: 0} // directly on the line
 
 	offPath := unit.NewUnit(11, "OffPath", 100, 100)
 	offPath.Position = unit.Position{X: 5, Y: 10, Z: 0} // perp dist = 5, outside width
 
 	beyond := unit.NewUnit(12, "Beyond", 100, 100)
-	beyond.Position = unit.Position{X: 0, Y: 25, Z: 0}   // beyond endpoint
+	beyond.Position = unit.Position{X: 0, Y: 25, Z: 0} // beyond endpoint
 
 	slightlyOff := unit.NewUnit(13, "SlightlyOff", 100, 100)
 	slightlyOff.Position = unit.Position{X: 0.8, Y: 10, Z: 0} // perp = 0.8 <= halfWidth(1)
@@ -349,7 +349,7 @@ func TestFilterFunc_RemovesLowHPUnits(t *testing.T) {
 	}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 20},
@@ -403,7 +403,7 @@ func TestValidation_AliveOnly(t *testing.T) {
 	provider := &mockUnitProvider{units: []*unit.Unit{caster, alive, dead}}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 10},
@@ -441,7 +441,7 @@ func TestValidation_MaxTargets(t *testing.T) {
 	provider := &mockUnitProvider{units: units}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 20},
@@ -462,10 +462,10 @@ func TestValidation_ConditionFunc(t *testing.T) {
 	caster := unit.NewUnit(1, "Caster", 100, 100)
 	caster.Position = unit.Position{X: 0, Y: 0, Z: 0}
 
-	warrior := unit.NewUnit(10, "Warrior", 100, 0)  // no mana
+	warrior := unit.NewUnit(10, "Warrior", 100, 0) // no mana
 	warrior.Position = unit.Position{X: 3, Y: 0, Z: 0}
 
-	mage := unit.NewUnit(11, "Mage", 100, 500)  // has mana
+	mage := unit.NewUnit(11, "Mage", 100, 500) // has mana
 	mage.Position = unit.Position{X: 5, Y: 0, Z: 0}
 
 	provider := &mockUnitProvider{units: []*unit.Unit{caster, warrior, mage}}
@@ -476,7 +476,7 @@ func TestValidation_ConditionFunc(t *testing.T) {
 	}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 20},
@@ -508,7 +508,7 @@ func TestSelectSelf(t *testing.T) {
 	provider := &mockUnitProvider{units: []*unit.Unit{caster}}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectSelf,
 		},
@@ -577,7 +577,7 @@ func TestAreaFilter(t *testing.T) {
 	}
 
 	ctx := &SelectionContext{
-		Caster:    caster,
+		Caster: caster,
 		Descriptor: TargetDescriptor{
 			Category: SelectArea,
 			Dir:      Direction{Radius: 10},

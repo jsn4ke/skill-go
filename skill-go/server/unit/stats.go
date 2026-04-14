@@ -6,7 +6,7 @@ import "fmt"
 type StatType int
 
 const (
-	StatStrength   StatType = iota
+	StatStrength StatType = iota
 	StatAgility
 	StatStamina
 	StatIntellect

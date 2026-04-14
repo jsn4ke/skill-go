@@ -58,10 +58,10 @@ func TestFlowEventFields(t *testing.T) {
 	tr := NewTraceWithSinks(rec)
 
 	fields := map[string]interface{}{
-		"target":  uint64(12345),
-		"damage":  float64(5000.5),
-		"crit":    true,
-		"school":  "fire",
+		"target": uint64(12345),
+		"damage": float64(5000.5),
+		"crit":   true,
+		"school": "fire",
 	}
 
 	e := tr.Event(SpanEffectHit, "deal_damage", uint32(1337), "Fireball", fields)

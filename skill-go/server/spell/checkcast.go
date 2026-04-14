@@ -117,9 +117,9 @@ func checkShapeshift(info *spelldef.SpellInfo, caster *unit.Unit, t *trace.Trace
 	}
 	if caster.CurrentForm == 0 || (caster.CurrentForm&info.RequiresShapeshiftMask) == 0 {
 		t.Event(trace.SpanCheckCast, "failed", info.ID, info.Name, map[string]interface{}{
-			"reason":      "wrong_shapeshift",
-			"form":        caster.CurrentForm,
-			"required":    info.RequiresShapeshiftMask,
+			"reason":   "wrong_shapeshift",
+			"form":     caster.CurrentForm,
+			"required": info.RequiresShapeshiftMask,
 		})
 		return spelldef.CastErrShapeshifted
 	}

@@ -66,17 +66,17 @@ func ResolveMeleeHit(attacker, target *unit.Unit, t *trace.Trace) spelldef.Comba
 	if t != nil {
 		t.Event(trace.SpanCombat, "melee_roll",
 			0, "", map[string]interface{}{
-			"roll":          math.Round(roll*100) / 100,
-			"result":        result,
-			"attackerLevel": attacker.Level,
-			"targetLevel":   target.Level,
-			"missChance":    missChance,
-			"dodge":         dodge,
-			"parry":         parry,
-			"glancing":      glancing,
-			"block":         block,
-			"crit":          crit,
-		})
+				"roll":          math.Round(roll*100) / 100,
+				"result":        result,
+				"attackerLevel": attacker.Level,
+				"targetLevel":   target.Level,
+				"missChance":    missChance,
+				"dodge":         dodge,
+				"parry":         parry,
+				"glancing":      glancing,
+				"block":         block,
+				"crit":          crit,
+			})
 	}
 
 	return result
@@ -110,11 +110,11 @@ func ResolveSpellHit(
 		if t != nil {
 			t.Event(trace.SpanCombat, "spell_roll",
 				0, "", map[string]interface{}{
-				"roll":       math.Round(roll*100) / 100,
-				"result":     "miss",
-				"missChance": missChance,
-				"hitSpell":   attacker.HitSpell,
-			})
+					"roll":       math.Round(roll*100) / 100,
+					"result":     "miss",
+					"missChance": missChance,
+					"hitSpell":   attacker.HitSpell,
+				})
 		}
 		return spelldef.CombatResultMiss
 	}
@@ -123,10 +123,10 @@ func ResolveSpellHit(
 		if t != nil {
 			t.Event(trace.SpanCombat, "spell_roll",
 				0, "", map[string]interface{}{
-				"roll":      math.Round(roll*100) / 100,
-				"result":    "crit",
-				"critSpell": crit,
-			})
+					"roll":      math.Round(roll*100) / 100,
+					"result":    "crit",
+					"critSpell": crit,
+				})
 		}
 		return spelldef.CombatResultCrit
 	}
@@ -140,10 +140,10 @@ func ResolveSpellHit(
 			if t != nil {
 				t.Event(trace.SpanCombat, "resist_roll",
 					0, "", map[string]interface{}{
-					"resistance":   resistance,
-					"avgReduction": avgReduction,
-					"rollFactor":   rollFactor,
-				})
+						"resistance":   resistance,
+						"avgReduction": avgReduction,
+						"rollFactor":   rollFactor,
+					})
 			}
 			if rollFactor >= 1.0 {
 				return spelldef.CombatResultFullResist
@@ -157,11 +157,11 @@ func ResolveSpellHit(
 	if t != nil {
 		t.Event(trace.SpanCombat, "spell_roll",
 			0, "", map[string]interface{}{
-			"roll":       math.Round(roll*100) / 100,
-			"result":     "hit",
-			"missChance": missChance,
-			"hitSpell":   attacker.HitSpell,
-		})
+				"roll":       math.Round(roll*100) / 100,
+				"result":     "hit",
+				"missChance": missChance,
+				"hitSpell":   attacker.HitSpell,
+			})
 	}
 
 	return spelldef.CombatResultHit

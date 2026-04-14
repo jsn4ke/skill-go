@@ -10,8 +10,8 @@ import (
 
 // docSection represents one section of the config reference.
 type docSection struct {
-	Title  string       `json:"title"`
-	Fields []docField   `json:"fields"`
+	Title  string     `json:"title"`
+	Fields []docField `json:"fields"`
 }
 
 // docField documents a single configuration field.

@@ -28,12 +28,12 @@ type streamRoute struct {
 
 // HTTPTransport implements Transport using the standard net/http package.
 type HTTPTransport struct {
-	mu             sync.Mutex
-	routes         []*route
-	streamRoutes   []*streamRoute
-	middlewares    []func(http.Handler) http.Handler
-	staticFS       http.FileSystem
-	staticPrefix   string // e.g. "/"
+	mu           sync.Mutex
+	routes       []*route
+	streamRoutes []*streamRoute
+	middlewares  []func(http.Handler) http.Handler
+	staticFS     http.FileSystem
+	staticPrefix string // e.g. "/"
 }
 
 // NewHTTPTransport creates a new HTTP transport.

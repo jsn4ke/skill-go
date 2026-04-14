@@ -104,11 +104,11 @@ func handleSchoolDamageHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target 
 
 	target.TakeDamage(damage)
 	t.Event(trace.SpanEffectHit, "school_damage_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"target":  target.Name,
-		"damage":  damage,
-		"school":  eff.SchoolMask,
-		"result":  result,
-		"hp":      target.Health,
+		"target": target.Name,
+		"damage": damage,
+		"school": eff.SchoolMask,
+		"result": result,
+		"hp":     target.Health,
 	})
 }
 
@@ -157,9 +157,9 @@ func handleChargeHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.
 	}
 
 	ctx.GetTrace().Event(trace.SpanEffectHit, "charge_teleport", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"caster":  caster.Name,
-		"target":  target.Name,
-		"offset":  offset,
-		"newPos":  map[string]float64{"x": caster.Position.X, "z": caster.Position.Z},
+		"caster": caster.Name,
+		"target": target.Name,
+		"offset": offset,
+		"newPos": map[string]float64{"x": caster.Position.X, "z": caster.Position.Z},
 	})
 }

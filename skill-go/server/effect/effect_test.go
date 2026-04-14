@@ -17,11 +17,11 @@ type mockCasterInfo struct {
 	spellName string
 }
 
-func (m *mockCasterInfo) Caster() *unit.Unit       { return m.caster }
-func (m *mockCasterInfo) Targets() []*unit.Unit     { return m.targets }
-func (m *mockCasterInfo) GetTrace() *trace.Trace    { return m.trace }
-func (m *mockCasterInfo) GetSpellID() uint32        { return m.spellID }
-func (m *mockCasterInfo) GetSpellName() string      { return m.spellName }
+func (m *mockCasterInfo) Caster() *unit.Unit     { return m.caster }
+func (m *mockCasterInfo) Targets() []*unit.Unit  { return m.targets }
+func (m *mockCasterInfo) GetTrace() *trace.Trace { return m.trace }
+func (m *mockCasterInfo) GetSpellID() uint32     { return m.spellID }
+func (m *mockCasterInfo) GetSpellName() string   { return m.spellName }
 
 func newCtx(caster *unit.Unit, targets []*unit.Unit) *mockCasterInfo {
 	return &mockCasterInfo{

@@ -24,13 +24,13 @@ type fileEventJSON struct {
 // FileSink writes FlowEvents as JSON-lines to daily-rotated log files.
 // Writes are non-blocking via a buffered channel; overflow events are dropped.
 type FileSink struct {
-	dir      string
-	ch       chan FlowEvent
-	done     chan struct{}
-	wg       sync.WaitGroup
-	file     *os.File
-	date     string // "YYYY-MM-DD"
-	dropped  int64
+	dir     string
+	ch      chan FlowEvent
+	done    chan struct{}
+	wg      sync.WaitGroup
+	file    *os.File
+	date    string // "YYYY-MM-DD"
+	dropped int64
 }
 
 // NewFileSink creates a FileSink that writes to dir/trace-YYYY-MM-DD.log.

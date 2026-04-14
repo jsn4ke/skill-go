@@ -6,3 +6,5 @@ spellId,index,type,school,value,tickInterval,duration,auraType,miscValue,trigger
 100,2,weapon_damage,physical,,,,,,
 100,3,energize,physical,9,,,,,
 7922,0,apply_aura,physical,0,,1500,1,4,
+10,0,school_damage,frost,25,,,,,,8
+10,1,apply_aura,frost,65,,1500,1,10,,8

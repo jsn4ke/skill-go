@@ -28,11 +28,11 @@ func TestNewSpellHistory(t *testing.T) {
 
 func TestAddCooldownAndGetRemaining(t *testing.T) {
 	tests := []struct {
-		name      string
-		spellID   uint32
-		duration  int32
-		category  int32
-		wantZero  bool
+		name     string
+		spellID  uint32
+		duration int32
+		category int32
+		wantZero bool
 	}{
 		{"6 second cooldown", 1001, 6000, 0, false},
 		{"1 second cooldown", 1002, 1000, 1, false},
@@ -72,10 +72,10 @@ func TestConsumeCharge(t *testing.T) {
 	h.InitCharges(spellID, maxCharges, recoveryMs)
 
 	tests := []struct {
-		name         string
-		consumptions int
+		name          string
+		consumptions  int
 		wantRemaining int32
-		wantSuccess  bool
+		wantSuccess   bool
 	}{
 		{"consume 1 of 3", 1, 2, true},
 		{"consume 2 of 3", 2, 1, true},
@@ -201,12 +201,12 @@ func TestSchoolLockout_MultipleSchools(t *testing.T) {
 
 func TestCooldownModifiers(t *testing.T) {
 	tests := []struct {
-		name         string
-		modifier     CooldownModifier
-		baseMs       int32
-		method       string // "cooldown" or "recovery"
-		wantResult   int32
-		tolerance    int32 // allowed rounding error
+		name       string
+		modifier   CooldownModifier
+		baseMs     int32
+		method     string // "cooldown" or "recovery"
+		wantResult int32
+		tolerance  int32 // allowed rounding error
 	}{
 		{
 			name:       "haste 50% reduces cooldown to 4000",

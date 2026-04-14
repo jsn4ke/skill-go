@@ -145,18 +145,18 @@ func TestCancel_FromPreparingState(t *testing.T) {
 
 func TestCheckCast(t *testing.T) {
 	tests := []struct {
-		name      string
-		info      *spelldef.SpellInfo
-		setup     func(caster *unit.Unit, targets []*unit.Unit)
-		wantErr   spelldef.CastError
+		name    string
+		info    *spelldef.SpellInfo
+		setup   func(caster *unit.Unit, targets []*unit.Unit)
+		wantErr spelldef.CastError
 	}{
 		{
 			name: "pass with no restrictions",
 			info: &spelldef.SpellInfo{
-				ID:          10,
-				Name:        "SimpleSpell",
+				ID:             10,
+				Name:           "SimpleSpell",
 				PreventionType: spelldef.PreventionTypeNone,
-				RangeMax:    40,
+				RangeMax:       40,
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
 				caster.Position = unit.Position{X: 0, Y: 0, Z: 0}
@@ -167,8 +167,8 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "silenced caster fails for silence-prevented spell",
 			info: &spelldef.SpellInfo{
-				ID:          11,
-				Name:        "ArcaneBlast",
+				ID:             11,
+				Name:           "ArcaneBlast",
 				PreventionType: spelldef.PreventionTypeSilence,
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
@@ -179,8 +179,8 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "silenced caster passes for non-silence spell",
 			info: &spelldef.SpellInfo{
-				ID:          12,
-				Name:        "PhysicalStrike",
+				ID:             12,
+				Name:           "PhysicalStrike",
 				PreventionType: spelldef.PreventionTypeNone,
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
@@ -230,8 +230,8 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "disarmed caster fails for pacify-prevented spell",
 			info: &spelldef.SpellInfo{
-				ID:          16,
-				Name:        "MeleeAttack",
+				ID:             16,
+				Name:           "MeleeAttack",
 				PreventionType: spelldef.PreventionTypePacify,
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
@@ -242,8 +242,8 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "wrong shapeshift form fails",
 			info: &spelldef.SpellInfo{
-				ID:                   17,
-				Name:                 "BearFormSpell",
+				ID:                     17,
+				Name:                   "BearFormSpell",
 				RequiresShapeshiftMask: 1, // form 1 required
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
@@ -254,8 +254,8 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "correct shapeshift form passes",
 			info: &spelldef.SpellInfo{
-				ID:                   18,
-				Name:                 "BearFormSpell",
+				ID:                     18,
+				Name:                   "BearFormSpell",
 				RequiresShapeshiftMask: 1,
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
@@ -411,28 +411,28 @@ func TestFlatModifier(t *testing.T) {
 
 func TestModifierChain(t *testing.T) {
 	tests := []struct {
-		name     string
-		chain    ModifierChain
-		baseMs   int32
-		wantMs   int32
+		name   string
+		chain  ModifierChain
+		baseMs int32
+		wantMs int32
 	}{
 		{
-			name:     "empty chain returns base unchanged",
-			chain:    ModifierChain{},
-			baseMs:   3000,
-			wantMs:   3000,
+			name:   "empty chain returns base unchanged",
+			chain:  ModifierChain{},
+			baseMs: 3000,
+			wantMs: 3000,
 		},
 		{
-			name:     "single HasteModifier(50) on 3000ms gives 2000ms",
-			chain:    ModifierChain{HasteModifier{HastePercent: 50}},
-			baseMs:   3000,
-			wantMs:   2000,
+			name:   "single HasteModifier(50) on 3000ms gives 2000ms",
+			chain:  ModifierChain{HasteModifier{HastePercent: 50}},
+			baseMs: 3000,
+			wantMs: 2000,
 		},
 		{
-			name:     "single FlatModifier(-1000) on 3000ms gives 2000ms",
-			chain:    ModifierChain{FlatModifier{FlatMs: -1000}},
-			baseMs:   3000,
-			wantMs:   2000,
+			name:   "single FlatModifier(-1000) on 3000ms gives 2000ms",
+			chain:  ModifierChain{FlatModifier{FlatMs: -1000}},
+			baseMs: 3000,
+			wantMs: 2000,
 		},
 		{
 			name: "Haste(50) then Flat(-500) on 3000ms: 3000/1.5=2000, 2000-500=1500",
@@ -498,11 +498,11 @@ func TestModifierType(t *testing.T) {
 
 func TestReCheckRange(t *testing.T) {
 	tests := []struct {
-		name    string
-		rangeMax float64
+		name      string
+		rangeMax  float64
 		casterPos unit.Position
 		targetPos unit.Position
-		want    bool
+		want      bool
 	}{
 		{
 			name:      "target within range returns true",

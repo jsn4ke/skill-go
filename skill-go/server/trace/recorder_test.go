@@ -24,9 +24,9 @@ func TestBySpan(t *testing.T) {
 	rec.Write(makeEvent(SpanAura, "apply", 2))
 
 	tests := []struct {
-		name  string
-		span  string
-		want  int
+		name string
+		span string
+		want int
 	}{
 		{"spell events", SpanSpell, 2},
 		{"checkcast events", SpanCheckCast, 1},
@@ -98,10 +98,10 @@ func TestHasEvent(t *testing.T) {
 	rec.Write(makeEvent(SpanAura, "apply", 2))
 
 	tests := []struct {
-		name      string
-		span      string
-		event     string
-		want      bool
+		name  string
+		span  string
+		event string
+		want  bool
 	}{
 		{"existing spell.cast_start", SpanSpell, "cast_start", true},
 		{"existing checkcast.ok", SpanCheckCast, "ok", true},

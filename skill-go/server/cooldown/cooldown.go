@@ -19,10 +19,10 @@ type SpellCooldownRecord struct {
 
 // ChargeRecord tracks charge-based recovery for a spell.
 type ChargeRecord struct {
-	MaxCharges      int32
-	CurrentCharges  int32
+	MaxCharges       int32
+	CurrentCharges   int32
 	RecoveryDuration time.Duration
-	RecoveryQueue   []time.Time // timestamps when each recovery completes
+	RecoveryQueue    []time.Time // timestamps when each recovery completes
 }
 
 // GCDRecord tracks a global cooldown entry.
@@ -93,8 +93,8 @@ func (h *SpellHistory) GetCooldownRemaining(spellID uint32) time.Duration {
 // InitCharges initializes a charge record for a spell.
 func (h *SpellHistory) InitCharges(spellID uint32, maxCharges int32, recoveryMs int32) {
 	h.charges[spellID] = &ChargeRecord{
-		MaxCharges:      maxCharges,
-		CurrentCharges:  maxCharges,
+		MaxCharges:       maxCharges,
+		CurrentCharges:   maxCharges,
 		RecoveryDuration: time.Duration(recoveryMs) * time.Millisecond,
 	}
 }
@@ -318,7 +318,7 @@ func (h *SpellHistory) TraceAddCooldown(spellID uint32, durationMs int32, catego
 func (h *SpellHistory) TraceConsumeCharge(spellID uint32, t *trace.Trace) bool {
 	ok := h.ConsumeCharge(spellID)
 	t.Event(trace.SpanCooldown, "consume_charge", spellID, "", map[string]interface{}{
-		"success": ok,
+		"success":   ok,
 		"remaining": h.GetChargeRemaining(spellID),
 	})
 	return ok

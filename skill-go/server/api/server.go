@@ -25,6 +25,8 @@ type CastRequest struct {
 	CasterGUID uint64   `json:"casterGuid"`
 	SpellID    uint32   `json:"spellID"`
 	TargetIDs  []uint64 `json:"targetIDs"`
+	DestX      *float64 `json:"destX,omitempty"`
+	DestZ      *float64 `json:"destZ,omitempty"`
 }
 
 // UnitJSON represents a unit's state for the API.
@@ -62,21 +64,22 @@ type UnitJSON struct {
 	MaxWeapon   int32              `json:"maxWeapon"`
 	Auras       []AuraJSON         `json:"auras"`
 	Position    unit.Position      `json:"position"`
+	SpeedMod    float64            `json:"speedMod"`
 }
 
 // SpellJSON represents a spell definition for the API.
 type SpellJSON struct {
-	ID              uint32            `json:"id"`
-	Name            string            `json:"name"`
-	SchoolMask      uint32            `json:"schoolMask"`
-	SchoolName      string            `json:"schoolName"`
-	CastTime        int32             `json:"castTime"`
-	CD              int32             `json:"cooldown"`
-	PowerCost       int32             `json:"powerCost"`
-	MaxTargets      int               `json:"maxTargets"`
-	CategoryCD      int32             `json:"categoryCD"`
-	Effects         []string          `json:"effects"`
-	EffectsDetail   []EffectDetailJSON `json:"effectsDetail"`
+	ID            uint32             `json:"id"`
+	Name          string             `json:"name"`
+	SchoolMask    uint32             `json:"schoolMask"`
+	SchoolName    string             `json:"schoolName"`
+	CastTime      int32              `json:"castTime"`
+	CD            int32              `json:"cooldown"`
+	PowerCost     int32              `json:"powerCost"`
+	MaxTargets    int                `json:"maxTargets"`
+	CategoryCD    int32              `json:"categoryCD"`
+	Effects       []string           `json:"effects"`
+	EffectsDetail []EffectDetailJSON `json:"effectsDetail"`
 }
 
 // EffectDetailJSON provides full effect parameters for the config editor.
@@ -89,25 +92,29 @@ type EffectDetailJSON struct {
 	WeaponPercent float64 `json:"weaponPercent"`
 	AuraDuration  int32   `json:"auraDuration"`
 	AuraType      int32   `json:"auraType"`
+	Radius        float64 `json:"radius"`
 }
 
 // TraceEventJSON represents a trace event for the API.
 type TraceEventJSON struct {
-	FlowID    uint64                  `json:"flowId"`
-	Timestamp int64                   `json:"timestamp"`
-	Span      string                  `json:"span"`
-	Event     string                  `json:"event"`
-	SpellID   uint32                  `json:"spellId"`
-	SpellName string                  `json:"spellName"`
-	Fields    map[string]interface{}  `json:"fields"`
+	FlowID    uint64                 `json:"flowId"`
+	Timestamp int64                  `json:"timestamp"`
+	Span      string                 `json:"span"`
+	Event     string                 `json:"event"`
+	SpellID   uint32                 `json:"spellId"`
+	SpellName string                 `json:"spellName"`
+	Fields    map[string]interface{} `json:"fields"`
 }
 
 // CastResponse is the JSON response for POST /api/cast.
 type CastResponse struct {
-	Result string          `json:"result"`
-	Error  string          `json:"error,omitempty"`
-	Units  []UnitJSON      `json:"units"`
-	Events []TraceEventJSON `json:"events"`
+	Result          string           `json:"result"`
+	Error           string           `json:"error,omitempty"`
+	Units           []UnitJSON       `json:"units"`
+	Events          []TraceEventJSON `json:"events"`
+	ChannelDuration int32            `json:"channelDuration,omitempty"`
+	DestX           float64          `json:"destX,omitempty"`
+	DestZ           float64          `json:"destZ,omitempty"`
 }
 
 // AuraJSON represents an active aura for the API.
@@ -136,6 +143,9 @@ type pendingCast struct {
 	targetIDs       []uint64
 	castTimeMs      int32
 	pushbackTotalMs int32
+	DestX           *float64
+	DestZ           *float64
+	Radius          float64
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +190,7 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 		HitMelee: u.HitMelee, HitSpell: u.HitSpell,
 		Dodge: u.Dodge, Parry: u.Parry, Block: u.Block, BlockValue: u.BlockValue,
 		MinWeapon: u.MinWeaponDamage, MaxWeapon: u.MaxWeaponDamage,
-		Auras: auraList, Position: u.Position,
+		Auras: auraList, Position: u.Position, SpeedMod: u.SpeedMod,
 	}
 }
 
@@ -198,6 +208,7 @@ func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 			WeaponPercent: e.WeaponPercent,
 			AuraDuration:  e.AuraDuration,
 			AuraType:      e.AuraType,
+			Radius:        e.Radius,
 		}
 	}
 	return SpellJSON{
@@ -316,12 +327,12 @@ func makeAuraHandler(provider *simpleAuraProvider) effect.AuraHandler {
 			return
 		}
 		a := &aura.Aura{
-			SpellID:    ctx.GetSpellID(),
-			SourceName: ctx.GetSpellName(),
-			CasterGUID: ctx.Caster().GUID,
-			Caster:     ctx.Caster(),
-			AuraType:   aura.AuraType(eff.AuraType),
-			Duration:   eff.AuraDuration,
+			SpellID:     ctx.GetSpellID(),
+			SourceName:  ctx.GetSpellName(),
+			CasterGUID:  ctx.Caster().GUID,
+			Caster:      ctx.Caster(),
+			AuraType:    aura.AuraType(eff.AuraType),
+			Duration:    eff.AuraDuration,
 			StackAmount: 1,
 			Effects: []*aura.AuraEffect{
 				{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, MiscValue: eff.MiscValue, PeriodicTimer: eff.PeriodicTickInterval},
@@ -436,12 +447,12 @@ func effectTypeFromName(name string) spelldef.SpellEffectType {
 
 // UpdateSpellRequest is the JSON body for PUT /api/spells/{id}.
 type UpdateSpellRequest struct {
-	Name                 string               `json:"name"`
-	CastTime             int32                `json:"castTime"`
-	RecoveryTime         int32                `json:"cooldown"`
-	CategoryRecoveryTime int32                `json:"categoryCD"`
-	PowerCost            int32                `json:"powerCost"`
-	MaxTargets           int                  `json:"maxTargets"`
+	Name                 string                `json:"name"`
+	CastTime             int32                 `json:"castTime"`
+	RecoveryTime         int32                 `json:"cooldown"`
+	CategoryRecoveryTime int32                 `json:"categoryCD"`
+	PowerCost            int32                 `json:"powerCost"`
+	MaxTargets           int                   `json:"maxTargets"`
 	Effects              []UpdateEffectRequest `json:"effects"`
 }
 
@@ -488,6 +499,8 @@ func handleCast(gl *GameLoop) http.HandlerFunc {
 			CasterGUID: req.CasterGUID,
 			SpellID:    req.SpellID,
 			TargetIDs:  req.TargetIDs,
+			DestX:      req.DestX,
+			DestZ:      req.DestZ,
 		}})
 
 		if result.Err != "" {

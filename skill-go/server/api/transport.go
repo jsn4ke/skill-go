@@ -83,13 +83,13 @@ func HTTPStatusFromCode(code string) int {
 
 // Error codes used throughout the API.
 const (
-	ErrCodeBadRequest      = "bad_request"
-	ErrCodeNotFound        = "not_found"
+	ErrCodeBadRequest       = "bad_request"
+	ErrCodeNotFound         = "not_found"
 	ErrCodeMethodNotAllowed = "method_not_allowed"
-	ErrCodeInternal        = "internal_error"
-	ErrCodeCastFailed      = "cast_failed"
-	ErrCodeInvalidJSON     = "invalid_json"
-	ErrCodeMissingField    = "missing_field"
+	ErrCodeInternal         = "internal_error"
+	ErrCodeCastFailed       = "cast_failed"
+	ErrCodeInvalidJSON      = "invalid_json"
+	ErrCodeMissingField     = "missing_field"
 )
 
 // ErrorResponse is a convenience function to create an error Response.

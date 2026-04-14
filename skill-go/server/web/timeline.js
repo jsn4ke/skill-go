@@ -80,13 +80,21 @@ export function processEvents(events, characters, casterGUID, selectedTargetGUID
           const resultCode = fields.result;
           const schoolName = SCHOOL_MASK_TO_NAME[fields.school] || 'Fire';
 
-          spawnProjectile(casterGroup, targetGroup, schoolName);
+          // Skip projectile for channeled AoE spells (e.g. Blizzard spell=10).
+          // For these spells, damage comes from the area effect, not a traveling projectile.
+          // Spawning a projectile causes visual desync since HP is updated immediately
+          // via SSE but the projectile takes 600ms+ to arrive.
+          const isChanneledAoE = lastSpellID === 10; // Blizzard
+
+          if (!isChanneledAoE) {
+            spawnProjectile(casterGroup, targetGroup, schoolName);
+          }
 
           if (damage != null) {
             setTimeout(() => {
               flashHit(targetGroup);
               spawnDamageNumber(targetGroup, Math.round(damage), resultCode);
-            }, delay);
+            }, isChanneledAoE ? 0 : delay);
           }
         } else {
           console.warn('[timeline] school_damage_hit: targetGroup or casterGroup not found. targetName=', targetName, 'casterGroup=', !!casterGroup);

@@ -23,19 +23,19 @@ func newBuffAura(spellID uint32, casterGUID uint64, maxStack int32) *Aura {
 // helper to create a debuff aura that applies a control effect
 func newDebuffAura(spellID uint32, casterGUID uint64, controlState spelldef.UnitState) *Aura {
 	return &Aura{
-		SpellID:    spellID,
-		CasterGUID: casterGUID,
-		AuraType:   AuraTypeDebuff,
-		Duration:   10000,
-		MaxStack:   1,
+		SpellID:     spellID,
+		CasterGUID:  casterGUID,
+		AuraType:    AuraTypeDebuff,
+		Duration:    10000,
+		MaxStack:    1,
 		StackAmount: 1,
 		Effects: []*AuraEffect{
 			{
-				AuraType:   AuraTypeDebuff,
-				SpellID:    spellID,
+				AuraType:    AuraTypeDebuff,
+				SpellID:     spellID,
 				EffectIndex: 0,
-				BaseAmount: 0,
-				MiscValue:  int32(controlState),
+				BaseAmount:  0,
+				MiscValue:   int32(controlState),
 			},
 		},
 	}
@@ -48,21 +48,21 @@ func newProcAura(spellID uint32, casterGUID uint64, procChance float64, procChar
 		remaining = -1 // sentinel for unlimited
 	}
 	return &Aura{
-		SpellID:       spellID,
-		CasterGUID:    casterGUID,
-		AuraType:      AuraTypeProc,
-		Duration:      30000,
-		MaxStack:      1,
-		StackAmount:   1,
-		ProcChance:    procChance,
-		ProcCharges:   procCharges,
+		SpellID:        spellID,
+		CasterGUID:     casterGUID,
+		AuraType:       AuraTypeProc,
+		Duration:       30000,
+		MaxStack:       1,
+		StackAmount:    1,
+		ProcChance:     procChance,
+		ProcCharges:    procCharges,
 		RemainingProcs: remaining,
 		Effects: []*AuraEffect{
 			{
-				AuraType:   AuraTypeProc,
-				SpellID:    spellID,
+				AuraType:    AuraTypeProc,
+				SpellID:     spellID,
 				EffectIndex: 0,
-				BaseAmount: 100,
+				BaseAmount:  100,
 			},
 		},
 	}
@@ -104,10 +104,10 @@ func TestApplyAura_Stacking(t *testing.T) {
 	const maxStack int32 = 3
 
 	tests := []struct {
-		name          string
-		applyCount    int
-		wantStacks    int32
-		wantHasAura   bool
+		name        string
+		applyCount  int
+		wantStacks  int32
+		wantHasAura bool
 	}{
 		{"1st apply", 1, 1, true},
 		{"2nd apply", 2, 2, true},

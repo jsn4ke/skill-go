@@ -11,11 +11,11 @@ type Handler func(interface{})
 
 // ScriptContext holds hooks and state for a spell or aura script instance.
 type ScriptContext struct {
-	hooks    map[string][]Handler
-	mu       sync.Mutex
+	hooks     map[string][]Handler
+	mu        sync.Mutex
 	prevented map[string]bool // which hooks have been prevented
-	trace    *trace.Trace     // optional trace for logging
-	spellID  uint32
+	trace     *trace.Trace    // optional trace for logging
+	spellID   uint32
 	spellName string
 }
 
@@ -58,7 +58,7 @@ func (sc *ScriptContext) Fire(hookName string, arg interface{}) bool {
 
 	if sc.trace != nil {
 		sc.trace.Event(trace.SpanScript, "hook_fired", sc.spellID, sc.spellName, map[string]interface{}{
-			"hook":        hookName,
+			"hook":         hookName,
 			"handlerCount": len(handlers),
 		})
 	}

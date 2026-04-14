@@ -57,13 +57,13 @@ func (r *Registry) GetAuraScript(spellID uint32) *AuraScript {
 type Phase int
 
 const (
-	PhaseNone       Phase = iota
-	PhasePrepare           // can read SpellInfo only
-	PhaseCast              // can read SpellInfo + targets
-	PhaseLaunch            // can read/write launch data
-	PhaseHit               // can read/write hit data + targets
-	PhaseChannel           // channel tick context
-	PhaseFinish            // post-cast context
+	PhaseNone    Phase = iota
+	PhasePrepare       // can read SpellInfo only
+	PhaseCast          // can read SpellInfo + targets
+	PhaseLaunch        // can read/write launch data
+	PhaseHit           // can read/write hit data + targets
+	PhaseChannel       // channel tick context
+	PhaseFinish        // post-cast context
 )
 
 // PhaseGuard restricts what data can be accessed at each phase.

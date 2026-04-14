@@ -24,13 +24,13 @@ const (
 
 // FlowEvent represents a single event in the spell flow trace.
 type FlowEvent struct {
-	FlowID   uint64
+	FlowID    uint64
 	Timestamp time.Time
-	Span     string
-	Event    string
-	SpellID  uint32
+	Span      string
+	Event     string
+	SpellID   uint32
 	SpellName string
-	Fields   map[string]interface{}
+	Fields    map[string]interface{}
 }
 
 // TraceSink receives FlowEvents.

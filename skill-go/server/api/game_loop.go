@@ -12,6 +12,7 @@ import (
 	"skill-go/server/script"
 	"skill-go/server/spell"
 	"skill-go/server/spelldef"
+	"skill-go/server/targeting"
 	"skill-go/server/trace"
 	"skill-go/server/unit"
 )
@@ -41,6 +42,8 @@ type castPayload struct {
 	CasterGUID uint64
 	SpellID    uint32
 	TargetIDs  []uint64
+	DestX      *float64
+	DestZ      *float64
 }
 
 type pushbackPayload struct {
@@ -285,6 +288,14 @@ func (gl *GameLoop) Hub() *trace.StreamHub {
 	return gl.hub
 }
 
+// GetAllUnits implements targeting.UnitProvider for AoE target resolution.
+func (gl *GameLoop) GetAllUnits() []*unit.Unit {
+	return gl.allUnits
+}
+
+// Compile-time check that GameLoop satisfies targeting.UnitProvider.
+var _ targeting.UnitProvider = (*GameLoop)(nil)
+
 func (gl *GameLoop) run() {
 	gl.cmds = make(chan Command, 256)
 
@@ -353,6 +364,12 @@ func reply(cmd Command, r Result) {
 func (gl *GameLoop) handleCast(cmd Command) {
 	req := cmd.Payload.(castPayload)
 
+	// Reject if already casting or channeling
+	if gl.pending != nil {
+		reply(cmd, Result{Err: "already casting or channeling"})
+		return
+	}
+
 	spellInfo := gl.findSpell(req.SpellID)
 	if spellInfo == nil {
 		reply(cmd, Result{Err: fmt.Sprintf("unknown spell ID %d", req.SpellID)})
@@ -375,18 +392,48 @@ func (gl *GameLoop) handleCast(cmd Command) {
 
 	// Resolve targets
 	var targets []*unit.Unit
-	for _, guid := range req.TargetIDs {
-		u := gl.findUnit(guid)
-		if u != nil {
-			targets = append(targets, u)
+	var aoDestX, aoDestZ *float64
+	var aoRadius float64
+
+	// Create trace early (needed for AoE targeting resolution)
+	castTrace := gl.newCastTrace()
+
+	if req.DestX != nil && req.DestZ != nil {
+		// Ground-targeted AoE: resolve via targeting package
+		aoDestX = req.DestX
+		aoDestZ = req.DestZ
+		for _, eff := range spellInfo.Effects {
+			if eff.Radius > 0 {
+				aoRadius = eff.Radius
+				break
+			}
+		}
+		if aoRadius > 0 {
+			selCtx := &targeting.SelectionContext{
+				Caster: caster,
+				Descriptor: targeting.TargetDescriptor{
+					Category:   targeting.SelectArea,
+					Reference:  targeting.RefPosition,
+					Dir:        targeting.Direction{Radius: aoRadius},
+					Validation: targeting.ValidationRule{AliveOnly: true},
+				},
+				OriginPos: unit.Position{X: *aoDestX, Z: *aoDestZ},
+			}
+			targets = targeting.Select(selCtx, gl, castTrace, spellInfo.ID, spellInfo.Name)
+		}
+	}
+
+	if len(targets) == 0 {
+		for _, guid := range req.TargetIDs {
+			u := gl.findUnit(guid)
+			if u != nil {
+				targets = append(targets, u)
+			}
 		}
 	}
 	if len(targets) == 0 {
 		targets = gl.targets
 	}
-
-	// Create trace for this cast
-	castTrace := gl.newCastTrace()
 
 	// Create spell context
 	ctx := spell.New(spellInfo.ID, spellInfo, caster, targets)
@@ -406,8 +453,38 @@ func (gl *GameLoop) handleCast(cmd Command) {
 		return
 	}
 
+	// For instant channeled spells (CastTime=0, IsChanneled=true),
+	// Prepare() already called Cast() internally which entered StateChanneling.
+	// Start channel ticker directly and reply with channeling response.
+	if ctx.State == spell.StateChanneling {
+		gl.pending = &pendingCast{
+			ctx:             ctx,
+			spellInfo:       spellInfo,
+			targetIDs:       req.TargetIDs,
+			castTimeMs:      0,
+			pushbackTotalMs: 0,
+			DestX:           aoDestX,
+			DestZ:           aoDestZ,
+			Radius:          aoRadius,
+		}
+		gl.startChannelTicker(ctx)
+		gl.recorder.Reset()
+		events := gl.collectAndResetEvents()
+		resp := gl.buildCastResponse(result, ctx, events)
+		resp.Result = "channeling"
+		resp.ChannelDuration = spellInfo.ChannelDuration
+		if aoDestX != nil {
+			resp.DestX = *aoDestX
+		}
+		if aoDestZ != nil {
+			resp.DestZ = *aoDestZ
+		}
+		reply(cmd, Result{Data: resp})
+		return
+	}
+
 	if ctx.CastDuration == 0 {
-		// Instant spell: execute immediately
+		// Instant non-channeled spell: execute immediately
 		result = ctx.Cast()
 
 		events := gl.collectAndResetEvents()
@@ -422,6 +499,9 @@ func (gl *GameLoop) handleCast(cmd Command) {
 		targetIDs:       req.TargetIDs,
 		castTimeMs:      spellInfo.CastTime,
 		pushbackTotalMs: 0,
+		DestX:           aoDestX,
+		DestZ:           aoDestZ,
+		Radius:          aoRadius,
 	}
 
 	// Events already pushed to StreamHub via trace sinks; clean up recorder
@@ -508,8 +588,8 @@ func (gl *GameLoop) handleCastPushback(cmd Command) {
 		gl.recorder.Reset()
 		gl.pending = nil
 		reply(cmd, Result{Data: map[string]interface{}{
-			"result":         "interrupted",
-			"reason":         "pushback_limit",
+			"result":          "interrupted",
+			"reason":          "pushback_limit",
 			"pushbackTotalMs": maxPushback,
 			"maxPushbackMs":   maxPushback,
 		}})
@@ -610,11 +690,28 @@ func (gl *GameLoop) handleChannelTick(cmd Command) {
 	p := cmd.Payload.(channelTickPayload)
 	ctx := p.Ctx
 
+	// Re-resolve AoE targets if this is a ground-targeted channel
+	if gl.pending != nil && gl.pending.DestX != nil && gl.pending.DestZ != nil && gl.pending.Radius > 0 {
+		selCtx := &targeting.SelectionContext{
+			Caster: ctx.Caster,
+			Descriptor: targeting.TargetDescriptor{
+				Category:   targeting.SelectArea,
+				Reference:  targeting.RefPosition,
+				Dir:        targeting.Direction{Radius: gl.pending.Radius},
+				Validation: targeting.ValidationRule{AliveOnly: true},
+			},
+			OriginPos: unit.Position{X: *gl.pending.DestX, Z: *gl.pending.DestZ},
+		}
+		resolved := targeting.Select(selCtx, gl, ctx.Trace, ctx.Info.ID, ctx.Info.Name)
+		ctx.SetTargets(resolved)
+	}
+
 	ctx.Trace.Event(trace.SpanSpell, "channel_tick", ctx.Info.ID, ctx.Info.Name, map[string]interface{}{
-		"tick":        p.TickCount,
-		"totalTicks":  p.TotalTicks,
+		"tick":       p.TickCount,
+		"totalTicks": p.TotalTicks,
 		"spellID":    ctx.Info.ID,
 		"spellName":  ctx.Info.Name,
+		"targets":    len(ctx.Targets),
 	})
 
 	if !ctx.ExecuteChannelTick() {
@@ -813,10 +910,12 @@ func (gl *GameLoop) handleReset(cmd Command) {
 	gl.caster.Health = gl.caster.MaxHealth
 	gl.caster.Mana = gl.caster.MaxMana
 	gl.caster.Alive = true
+	gl.caster.SpeedMod = 1.0
 	for _, u := range gl.allUnits {
 		u.Health = u.MaxHealth
 		u.Mana = u.MaxMana
 		u.Alive = true
+		u.SpeedMod = 1.0
 	}
 
 	gl.history = cooldown.NewSpellHistory()
@@ -883,14 +982,14 @@ func (gl *GameLoop) handleAuraUpdate(cmd Command) {
 						}
 						if target != nil && target.Alive {
 							target.TakeDamage(eff.BaseAmount)
-								t.Event(trace.SpanAura, "periodic_damage", a.SpellID, a.SourceName, map[string]interface{}{
-									"target":     target.Name,
-									"targetGUID": target.GUID,
-									"damage":     eff.BaseAmount,
-									"tick":       eff.AppliedTicks + i + 1,
-									"hp":         target.Health,
-									"maxHP":      target.MaxHealth,
-								})
+							t.Event(trace.SpanAura, "periodic_damage", a.SpellID, a.SourceName, map[string]interface{}{
+								"target":     target.Name,
+								"targetGUID": target.GUID,
+								"damage":     eff.BaseAmount,
+								"tick":       eff.AppliedTicks + i + 1,
+								"hp":         target.Health,
+								"maxHP":      target.MaxHealth,
+							})
 						}
 					}
 					eff.AppliedTicks = expectedTicks
@@ -954,7 +1053,7 @@ func (gl *GameLoop) addUnit(name string, level uint8) *unit.Unit {
 	u.SpellPower = spellPower
 
 	offsetX := 25.0 + float64(len(gl.allUnits))*5 + math.Round(float64(len(gl.allUnits)%3)*3)
-	offsetZ := float64(((len(gl.allUnits)*7+3)%11) - 5) * 1.5
+	offsetZ := float64(((len(gl.allUnits)*7+3)%11)-5) * 1.5
 	u.Position = unit.Position{X: offsetX, Y: 0, Z: offsetZ}
 
 	auraMgr := aura.NewAuraManager(u)

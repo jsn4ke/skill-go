@@ -18,11 +18,11 @@ type mockCasterInfo struct {
 	spellName string
 }
 
-func (m *mockCasterInfo) Caster() *unit.Unit       { return m.caster }
-func (m *mockCasterInfo) Targets() []*unit.Unit     { return m.targets }
-func (m *mockCasterInfo) GetTrace() *trace.Trace    { return m.tr }
-func (m *mockCasterInfo) GetSpellID() uint32        { return m.spellID }
-func (m *mockCasterInfo) GetSpellName() string      { return m.spellName }
+func (m *mockCasterInfo) Caster() *unit.Unit     { return m.caster }
+func (m *mockCasterInfo) Targets() []*unit.Unit  { return m.targets }
+func (m *mockCasterInfo) GetTrace() *trace.Trace { return m.tr }
+func (m *mockCasterInfo) GetSpellID() uint32     { return m.spellID }
+func (m *mockCasterInfo) GetSpellName() string   { return m.spellName }
 
 func newSpellCtx(caster *unit.Unit, targets []*unit.Unit) *mockCasterInfo {
 	return &mockCasterInfo{
@@ -338,7 +338,7 @@ func TestIntegration_AuraStatModifier_AffectsDamage(t *testing.T) {
 	// Apply a SpellPower buff aura to the caster
 	auraMgr := NewTestAuraMgr(caster)
 	buff := &TestBuffAura{
-		spellID: 500,
+		spellID:    500,
 		casterGUID: caster.GUID,
 		effects: []*TestStatEffect{
 			{StatType: unit.StatSpellPower, Amount: 500},

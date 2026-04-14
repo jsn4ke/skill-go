@@ -15,10 +15,10 @@ func TestPeriodicDamage_TickInterval(t *testing.T) {
 
 	auraMgr := aura.NewAuraManager(target)
 	a := &aura.Aura{
-		SpellID:    38692,
-		SourceName: "火球术",
-		AuraType:   aura.AuraTypeDebuff,
-		Duration:   8000,
+		SpellID:     38692,
+		SourceName:  "火球术",
+		AuraType:    aura.AuraTypeDebuff,
+		Duration:    8000,
 		StackAmount: 1,
 		Effects: []*aura.AuraEffect{
 			{
@@ -37,8 +37,8 @@ func TestPeriodicDamage_TickInterval(t *testing.T) {
 
 	gl := &GameLoop{
 		auraMgrs: map[uint64]*aura.AuraManager{target.GUID: auraMgr},
-		recorder:  trace.NewFlowRecorder(),
-		hub:       trace.NewStreamHub(10),
+		recorder: trace.NewFlowRecorder(),
+		hub:      trace.NewStreamHub(10),
 	}
 
 	gl.handleAuraUpdate(Command{})
@@ -60,10 +60,10 @@ func TestPeriodicDamage_ExpirationBeforeAllTicks(t *testing.T) {
 
 	auraMgr := aura.NewAuraManager(target)
 	a := &aura.Aura{
-		SpellID:    38692,
-		SourceName: "火球术",
-		AuraType:   aura.AuraTypeDebuff,
-		Duration:   8000,
+		SpellID:     38692,
+		SourceName:  "火球术",
+		AuraType:    aura.AuraTypeDebuff,
+		Duration:    8000,
 		StackAmount: 1,
 		Effects: []*aura.AuraEffect{
 			{
@@ -80,8 +80,8 @@ func TestPeriodicDamage_ExpirationBeforeAllTicks(t *testing.T) {
 
 	gl := &GameLoop{
 		auraMgrs: map[uint64]*aura.AuraManager{target.GUID: auraMgr},
-		recorder:  trace.NewFlowRecorder(),
-		hub:       trace.NewStreamHub(10),
+		recorder: trace.NewFlowRecorder(),
+		hub:      trace.NewStreamHub(10),
 	}
 
 	gl.handleAuraUpdate(Command{})
@@ -108,10 +108,10 @@ func TestPeriodicDamage_NoPeriodicEffect(t *testing.T) {
 
 	auraMgr := aura.NewAuraManager(target)
 	a := &aura.Aura{
-		SpellID:    5001,
-		SourceName: "PlainBuff",
-		AuraType:   aura.AuraTypeBuff,
-		Duration:   5000,
+		SpellID:     5001,
+		SourceName:  "PlainBuff",
+		AuraType:    aura.AuraTypeBuff,
+		Duration:    5000,
 		StackAmount: 1,
 		Effects: []*aura.AuraEffect{
 			{
@@ -128,8 +128,8 @@ func TestPeriodicDamage_NoPeriodicEffect(t *testing.T) {
 
 	gl := &GameLoop{
 		auraMgrs: map[uint64]*aura.AuraManager{target.GUID: auraMgr},
-		recorder:  trace.NewFlowRecorder(),
-		hub:       trace.NewStreamHub(10),
+		recorder: trace.NewFlowRecorder(),
+		hub:      trace.NewStreamHub(10),
 	}
 
 	gl.handleAuraUpdate(Command{})

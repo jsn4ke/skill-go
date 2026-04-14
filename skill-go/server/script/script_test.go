@@ -110,10 +110,10 @@ func TestScriptContext_FireNonExistent(t *testing.T) {
 
 func TestSpellScript_HookRegistration(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(ss *SpellScript)
-		fireHook  string
-		wantHit   bool
+		name     string
+		setup    func(ss *SpellScript)
+		fireHook string
+		wantHit  bool
 	}{
 		{
 			name: "OnCheckCast registers and fires",
@@ -172,10 +172,10 @@ func TestSpellScript_HookRegistration(t *testing.T) {
 
 func TestAuraScript_HookRegistration(t *testing.T) {
 	tests := []struct {
-		name      string
-		setup     func(as *AuraScript)
-		fireHook  string
-		wantHit   bool
+		name     string
+		setup    func(as *AuraScript)
+		fireHook string
+		wantHit  bool
 	}{
 		{
 			name: "OnApply registers and fires",
@@ -210,52 +210,52 @@ func TestAuraScript_HookRegistration(t *testing.T) {
 
 func TestPhaseGuard(t *testing.T) {
 	tests := []struct {
-		name              string
-		phase             Phase
-		wantTargets       bool
-		wantModifyHit     bool
+		name               string
+		phase              Phase
+		wantTargets        bool
+		wantModifyHit      bool
 		wantPreventDefault bool
 	}{
 		{
-			name:              "PhasePrepare cannot access targets",
-			phase:             PhasePrepare,
-			wantTargets:       false,
-			wantModifyHit:     false,
+			name:               "PhasePrepare cannot access targets",
+			phase:              PhasePrepare,
+			wantTargets:        false,
+			wantModifyHit:      false,
 			wantPreventDefault: true,
 		},
 		{
-			name:              "PhaseCast can access targets but not modify hit",
-			phase:             PhaseCast,
-			wantTargets:       true,
-			wantModifyHit:     false,
+			name:               "PhaseCast can access targets but not modify hit",
+			phase:              PhaseCast,
+			wantTargets:        true,
+			wantModifyHit:      false,
 			wantPreventDefault: false,
 		},
 		{
-			name:              "PhaseLaunch can access targets but not modify hit",
-			phase:             PhaseLaunch,
-			wantTargets:       true,
-			wantModifyHit:     false,
+			name:               "PhaseLaunch can access targets but not modify hit",
+			phase:              PhaseLaunch,
+			wantTargets:        true,
+			wantModifyHit:      false,
 			wantPreventDefault: true,
 		},
 		{
-			name:              "PhaseHit can access targets and modify hit",
-			phase:             PhaseHit,
-			wantTargets:       true,
-			wantModifyHit:     true,
+			name:               "PhaseHit can access targets and modify hit",
+			phase:              PhaseHit,
+			wantTargets:        true,
+			wantModifyHit:      true,
 			wantPreventDefault: true,
 		},
 		{
-			name:              "PhaseChannel can access targets but not modify hit",
-			phase:             PhaseChannel,
-			wantTargets:       true,
-			wantModifyHit:     false,
+			name:               "PhaseChannel can access targets but not modify hit",
+			phase:              PhaseChannel,
+			wantTargets:        true,
+			wantModifyHit:      false,
 			wantPreventDefault: false,
 		},
 		{
-			name:              "PhaseNone defaults to allowing target access",
-			phase:             PhaseNone,
-			wantTargets:       true,
-			wantModifyHit:     false,
+			name:               "PhaseNone defaults to allowing target access",
+			phase:              PhaseNone,
+			wantTargets:        true,
+			wantModifyHit:      false,
 			wantPreventDefault: false,
 		},
 	}

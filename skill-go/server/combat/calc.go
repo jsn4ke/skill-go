@@ -54,11 +54,11 @@ func CalcSpellDamage(
 			if t != nil {
 				t.Event(trace.SpanCombat, "resist_reduction",
 					0, "", map[string]interface{}{
-					"school":       school,
-					"resistance":   resistance,
-					"avgReduction": avgReduction,
-					"rollFactor":   factor,
-				})
+						"school":       school,
+						"resistance":   resistance,
+						"avgReduction": avgReduction,
+						"rollFactor":   factor,
+					})
 			}
 		}
 	}
@@ -72,11 +72,11 @@ func CalcSpellDamage(
 	if t != nil {
 		t.Event(trace.SpanCombat, "damage_calc",
 			0, "", map[string]interface{}{
-			"baseDamage":  baseDamage,
-			"finalDamage": result,
-			"school":      school,
-			"variance":    varyFactor,
-		})
+				"baseDamage":  baseDamage,
+				"finalDamage": result,
+				"school":      school,
+				"variance":    varyFactor,
+			})
 	}
 
 	return result
@@ -115,10 +115,10 @@ func CalcMeleeDamage(
 	if t != nil {
 		t.Event(trace.SpanCombat, "armor_mitigation",
 			0, "", map[string]interface{}{
-			"armor":     target.Armor,
-			"reduction": 1.0 - factor,
-			"factor":    factor,
-		})
+				"armor":     target.Armor,
+				"reduction": 1.0 - factor,
+				"factor":    factor,
+			})
 	}
 
 	result := int32(damage)
@@ -129,12 +129,12 @@ func CalcMeleeDamage(
 	if t != nil {
 		t.Event(trace.SpanCombat, "damage_calc",
 			0, "", map[string]interface{}{
-			"baseDamage":  baseDamage,
-			"finalDamage": result,
-			"school":      "physical",
-			"variance":    varyFactor,
-			"type":        "melee",
-		})
+				"baseDamage":  baseDamage,
+				"finalDamage": result,
+				"school":      "physical",
+				"variance":    varyFactor,
+				"type":        "melee",
+			})
 	}
 
 	return result
@@ -168,11 +168,11 @@ func resistRoll(avgReduction float64) float64 {
 	switch {
 	case roll < avgReduction*10.0:
 		return 1.0 // full resist (10% weight)
-	case roll < avgReduction*10.0 + avgReduction*30.0:
+	case roll < avgReduction*10.0+avgReduction*30.0:
 		return 0.75 // 75% resist (30% weight)
-	case roll < avgReduction*10.0 + avgReduction*60.0:
+	case roll < avgReduction*10.0+avgReduction*60.0:
 		return 0.50 // 50% resist (30% weight)
-	case roll < avgReduction*10.0 + avgReduction*90.0:
+	case roll < avgReduction*10.0+avgReduction*90.0:
 		return 0.25 // 25% resist (30% weight)
 	default:
 		return 0.0 // no resist

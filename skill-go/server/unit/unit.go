@@ -15,17 +15,17 @@ const (
 
 // Unit represents a game entity (player, NPC, etc).
 type Unit struct {
-	GUID      uint64
-	Name      string
-	Health    int32
-	MaxHealth int32
-	Mana      int32
-	MaxMana   int32
-	Rage      int32
-	MaxRage   int32
+	GUID             uint64
+	Name             string
+	Health           int32
+	MaxHealth        int32
+	Mana             int32
+	MaxMana          int32
+	Rage             int32
+	MaxRage          int32
 	PrimaryPowerType spelldef.PowerType
-	Alive     bool
-	Position  Position
+	Alive            bool
+	Position         Position
 
 	// State management
 	UnitStates  spelldef.UnitState // bitfield of control effects
@@ -58,6 +58,9 @@ type Unit struct {
 	// Weapon
 	MinWeaponDamage int32
 	MaxWeaponDamage int32
+
+	// Movement speed modifier (multiplicative). 1.0 = normal, 0.5 = 50% slow.
+	SpeedMod float64
 }
 
 // Position is a simple 3D coordinate.
@@ -76,6 +79,7 @@ func NewUnit(guid uint64, name string, health, mana int32) *Unit {
 		MaxMana:   mana,
 		Alive:     true,
 		Level:     1,
+		SpeedMod:  1.0,
 	}
 }
 
@@ -289,6 +293,24 @@ func (u *Unit) IsFriendly(other *Unit) bool {
 func (u *Unit) SetWeaponDamage(minDmg, maxDmg int32) {
 	u.MinWeaponDamage = minDmg
 	u.MaxWeaponDamage = maxDmg
+}
+
+// RecalcSpeedMod recomputes the multiplicative speed modifier from a list of
+// (amount, pct) pairs where amount is the slow percentage (e.g. 65 = 65% slow).
+// Slows stack multiplicatively: final = product of (1 - amount/100) for each slow.
+func (u *Unit) RecalcSpeedMod(slows []int32) {
+	if len(slows) == 0 {
+		u.SpeedMod = 1.0
+		return
+	}
+	mod := 1.0
+	for _, pct := range slows {
+		mod *= (1.0 - float64(pct)/100.0)
+	}
+	if mod < 0.0 {
+		mod = 0.0
+	}
+	u.SpeedMod = mod
 }
 
 // String returns a debug representation.

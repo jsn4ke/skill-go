@@ -52,6 +52,7 @@ export function createCharacter(unitData) {
     guid: unitData.guid, name: unitData.name, bodyMat, headMat, body, head,
     targetPosition: null, isMoving: false,
     unitData: { ...unitData },
+    speedMod: 1.0,
   };
 
   // Nameplate
@@ -161,6 +162,21 @@ export function updateCharacter(group, unitData) {
     const hasDebuff = unitData.auras?.some(a => a.auraType === 1) || false;
     stunEl.style.display = hasDebuff ? 'block' : 'none';
   }
+
+  // Speed modifier — track and apply visual slow effect
+  const speedMod = unitData.speedMod != null ? unitData.speedMod : 1.0;
+  d.speedMod = speedMod;
+
+  if (!unitData.alive) {
+    // Don't override dead color
+  } else if (speedMod < 1.0) {
+    // Slowed: tint body blue-ish
+    const slowColor = new THREE.Color(0x6688cc);
+    const roleColor = new THREE.Color(getRoleColor(unitData.name));
+    d.bodyMat.color.copy(roleColor).lerp(slowColor, 0.5);
+    d.headMat.color.copy(roleColor).lerp(slowColor, 0.5);
+  }
+  // If speedMod returns to 1.0, the dead/alive branch above restores normal color
 }
 
 export function removeCharacter(group) {
@@ -209,7 +225,7 @@ export function updateUnitMovement(group, dt) {
     return;
   }
 
-  const step = (d.moveSpeed || MOVE_SPEED) * dt;
+  const step = (d.moveSpeed || MOVE_SPEED) * (d.speedMod || 1.0) * dt;
   const ratio = Math.min(step / dist, 1);
   current.x += dx * ratio;
   current.z += dz * ratio;

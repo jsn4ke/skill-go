@@ -64,8 +64,8 @@ func Select(ctx *SelectionContext, world UnitProvider, t *trace.Trace, spellID u
 
 	if t != nil {
 		t.Event(trace.SpanTargeting, "selected", spellID, spellName, map[string]interface{}{
-			"category":    ctx.Descriptor.Category.String(),
-			"count":       len(candidates),
+			"category": ctx.Descriptor.Category.String(),
+			"count":    len(candidates),
 		})
 	}
 

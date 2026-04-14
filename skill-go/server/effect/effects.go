@@ -18,9 +18,9 @@ func RegisterExtended(store *Store, auraHandler AuraHandler, triggerHandler Trig
 	if auraHandler != nil {
 		store.RegisterHit(spelldef.SpellEffectApplyAura, func(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *unit.Unit) {
 			ctx.GetTrace().Event(trace.SpanEffectHit, "apply_aura", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-				"target":    target.Name,
-				"auraType":  eff.AuraType,
-				"duration":  eff.AuraDuration,
+				"target":   target.Name,
+				"auraType": eff.AuraType,
+				"duration": eff.AuraDuration,
 			})
 			auraHandler(ctx, eff, target)
 		})
@@ -73,10 +73,10 @@ func handleEnergizeHit(ctx CasterInfo, eff spelldef.SpellEffectInfo, target *uni
 		receiver.RestoreMana(eff.EnergizeAmount)
 	}
 	ctx.GetTrace().Event(trace.SpanEffectHit, "energize_hit", ctx.GetSpellID(), ctx.GetSpellName(), map[string]interface{}{
-		"target":   receiver.Name,
-		"amount":   eff.EnergizeAmount,
-		"mana":     receiver.Mana,
-		"rage":     receiver.Rage,
+		"target":    receiver.Name,
+		"amount":    eff.EnergizeAmount,
+		"mana":      receiver.Mana,
+		"rage":      receiver.Rage,
 		"powerType": eff.EnergizeType,
 	})
 }

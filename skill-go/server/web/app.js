@@ -19,6 +19,7 @@ const cooldownTimers = {};
 let selectedTargetGUID = null;
 let auraCountdownTimer = null;
 let targetingSpellID = null;
+let targetingMode = 'unit'; // 'unit' or 'ground'
 const CASTER_GUID = 1;
 let activeCasterGUID = 1;
 let spellLogCounter = 0;
@@ -33,6 +34,9 @@ let castingStartTime = null;
 let castingDuration = null;
 let castingSpellID = null;
 let castingTargetGUID = null;
+
+// ---- WASD Movement State ----
+const wasdKeys = { w: false, a: false, s: false, d: false };
 
 // ---- API (via netClient) ----
 const apiGet = (path, params) => netClient.get(path, params);
@@ -96,13 +100,44 @@ function initPanel(panelId) {
 async function init() {
   initScene();
   setOnCooldownStart((spellID, duration) => startCooldown(spellID, duration));
-  addUpdatable({ update(dt) { for (const c of characters) updateUnitMovement(c, dt); updateSelectionRingPosition(); } });
+  addUpdatable({ update(dt) { for (const c of characters) updateUnitMovement(c, dt); updateSelectionRingPosition(); processWASD(dt); } });
 
-  // Subscribe to SSE for real-time unit state updates (DoT/HoT ticks, aura removals)
+  // WASD keyboard listeners
+  document.addEventListener('keydown', (e) => { const k = e.key.toLowerCase(); if (k in wasdKeys) wasdKeys[k] = true; });
+  document.addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); if (k in wasdKeys) wasdKeys[k] = false; });
+
+  // Subscribe to SSE for real-time unit state updates (DoT/HoT ticks, aura removals, channel events)
   const sseSub = netClient.subscribe('/api/trace/stream', (event) => {
     console.log('[SSE]', event.span, event.event, event.fields);
     if (event.span === 'aura' && event.event === 'periodic_damage') {
       handlePeriodicDamage(event);
+    }
+    // Aura applied/removed/refreshed — refresh unit state for speed mod and panel changes
+    if (event.span === 'aura' && (event.event === 'applied' || event.event === 'removed' || event.event === 'refreshed')) {
+      netClient.get('/api/units').then(units => {
+        reconcileUnits(units);
+        // Refresh enemy panel to show/hide aura rows
+        if (selectedTargetGUID) {
+          const targetData = units.find(u => u.guid == selectedTargetGUID);
+          if (targetData) updateEnemyInfo(targetData);
+        }
+      }).catch(() => {});
+    }
+    // Forward effect hit events (damage/heal from casts and channel ticks)
+    if (event.span === 'effect_hit' && (event.event === 'school_damage_hit' || event.event === 'weapon_damage_hit' || event.event === 'heal_hit')) {
+      processEvents([{ span: event.span, event: event.event, fields: event.fields, spellId: event.fields?.spellID }], characters, activeCasterGUID, null);
+      netClient.get('/api/units').then(units => {
+        reconcileUnits(units, characters);
+        if (selectedTargetGUID) {
+          const targetData = units.find(u => u.guid == selectedTargetGUID);
+          if (targetData) updateEnemyInfo(targetData);
+        }
+      }).catch(() => {});
+    }
+    // Channel lifecycle events
+    if (event.span === 'spell' && (event.event === 'channel_elapsed' || event.event === 'channel_stopped')) {
+      exitChannelingState();
+      netClient.get('/api/units').then(units => reconcileUnits(units, characters)).catch(() => {});
     }
   });
   sseSub.onReconnect = (status) => console.log('[SSE]', status);
@@ -117,6 +152,13 @@ async function init() {
 
   const canvas = document.querySelector('#canvas-container canvas');
   canvas.addEventListener('click', onCanvasClick);
+  canvas.addEventListener('mousemove', (e) => {
+    if (targetingMode === 'ground' && groundCircleMesh) {
+      setMouseFromEvent(e);
+      const hit = raycastGround();
+      if (hit) updateGroundCircle(hit.x, hit.z);
+    }
+  });
 
   try {
     const [loadedSpells, units] = await Promise.all([apiGet('/api/spells'), apiGet('/api/units')]);
@@ -175,8 +217,9 @@ function reconcileUnits(apiUnits) {
 }
 
 // ---- Targeting Mode ----
-function enterTargetingMode(spellID) {
+function enterTargetingMode(spellID, mode) {
   targetingSpellID = spellID;
+  targetingMode = mode || 'unit';
   const spell = spellMap[spellID];
   document.getElementById('targeting-spell').textContent = spell ? spell.name : 'Spell';
   document.getElementById('targeting-indicator').classList.remove('hidden');
@@ -184,13 +227,65 @@ function enterTargetingMode(spellID) {
   document.querySelectorAll('.spell-btn').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById(`spell-btn-${spellID}`);
   if (btn) btn.classList.add('active');
+
+  // Show ground circle for AoE targeting
+  if (targetingMode === 'ground' && spell) {
+    const radius = Math.max(...(spell.effectsDetail || []).map(e => e.radius || 0), 1);
+    // Find caster position for initial circle placement
+    const casterGroup = characters.find(c => c.userData.guid == activeCasterGUID);
+    const cx = casterGroup ? casterGroup.position.x : 0;
+    const cz = casterGroup ? casterGroup.position.z : 0;
+    showGroundCircle(cx, cz, radius);
+  }
 }
 
 function exitTargetingMode() {
   targetingSpellID = null;
+  targetingMode = 'unit';
   document.getElementById('targeting-indicator').classList.add('hidden');
   document.querySelector('#canvas-container canvas').style.cursor = '';
   document.querySelectorAll('.spell-btn').forEach(b => b.classList.remove('active'));
+  removeGroundCircle();
+}
+
+// ---- Ground Circle Indicator ----
+let groundCircleMesh = null;
+
+function showGroundCircle(x, z, radius) {
+  const scene = getScene();
+  if (!groundCircleMesh) {
+    const geo = new THREE.RingGeometry(0, 1, 48);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x44aaff,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    groundCircleMesh = new THREE.Mesh(geo, mat);
+    groundCircleMesh.rotation.x = -Math.PI / 2;
+    groundCircleMesh.renderOrder = 999;
+    scene.add(groundCircleMesh);
+  }
+  groundCircleMesh.position.set(x, 0.1, z);
+  groundCircleMesh.scale.set(radius, radius, radius);
+  groundCircleMesh.visible = true;
+}
+
+function updateGroundCircle(x, z) {
+  if (groundCircleMesh) {
+    groundCircleMesh.position.set(x, 0.1, z);
+  }
+}
+
+function removeGroundCircle() {
+  if (groundCircleMesh) {
+    const scene = getScene();
+    scene.remove(groundCircleMesh);
+    groundCircleMesh.geometry.dispose();
+    groundCircleMesh.material.dispose();
+    groundCircleMesh = null;
+  }
 }
 
 // ---- Selection ----
@@ -263,12 +358,23 @@ function onCanvasClick(event) {
   for (const c of characters) allMeshes.push(...getCharacterMeshes(c));
   const charHit = raycastCharacters(allMeshes);
 
-  // Priority 1: targeting mode → cast at clicked character
+  // Priority 1: targeting mode → cast at clicked character or ground
   if (targetingSpellID) {
+    const spellID = targetingSpellID;
+    if (targetingMode === 'ground') {
+      const groundHit = raycastGround();
+      if (groundHit) {
+        exitTargetingMode();
+        castSpellAtGround(spellID, groundHit.x, groundHit.z);
+      } else {
+        exitTargetingMode();
+      }
+      return;
+    }
+    // Unit targeting mode
     if (charHit) {
       const guid = charHit.group.userData.guid;
       selectTarget(guid);
-      const spellID = targetingSpellID;
       exitTargetingMode();
       castSpell(spellID, guid);
       return;
@@ -288,13 +394,9 @@ function onCanvasClick(event) {
     return;
   }
 
-  // Priority 3: ground click → move selected target
-  // Movement interrupts casting (WoW behavior)
-  if (castingState === 'casting') {
-    cancelCast();
-  }
+  // Priority 3: ground click → move selected non-caster target (NOT interrupt)
   const groundHit = raycastGround();
-  if (groundHit && selectedTargetGUID) {
+  if (groundHit && selectedTargetGUID && selectedTargetGUID !== activeCasterGUID) {
     const group = characters.find(c => c.userData.guid == selectedTargetGUID);
     if (group) {
       moveUnit(group, groundHit.x, groundHit.z);
@@ -313,17 +415,40 @@ async function castSpell(spellID, targetGUID) {
     const result = await apiPost('/api/cast', { casterGuid: activeCasterGUID, spellID, targetIDs });
 
     if (result.result === 'preparing') {
-      // Cast-time spell: enter CASTING state
       enterCastingState(spellID, targetGUID, result.castTimeMs, result.schoolName);
-      // Process prepare events (cast glow)
+      if (result.events) processEvents(result.events, characters, activeCasterGUID, targetGUID);
+    } else if (result.result === 'channeling') {
+      enterChannelingState(spellID, result.channelDuration, result.destX, result.destZ);
       if (result.events) processEvents(result.events, characters, activeCasterGUID, targetGUID);
     } else if (result.result === 'success') {
-      // Instant spell: process immediately
       processCastResult(result, spellID, targetGUID);
     } else {
       console.log('Cast failed:', result.error);
     }
   } catch (err) { console.error('Cast error:', err); }
+}
+
+async function castSpellAtGround(spellID, destX, destZ) {
+  if (castingState === 'casting') return;
+
+  try {
+    const result = await apiPost('/api/cast', {
+      casterGuid: activeCasterGUID,
+      spellID,
+      targetIDs: [],
+      destX,
+      destZ,
+    });
+
+    if (result.result === 'channeling') {
+      enterChannelingState(spellID, result.channelDuration, result.destX, result.destZ);
+      if (result.events) processEvents(result.events, characters, activeCasterGUID, null);
+    } else if (result.result === 'success') {
+      processCastResult(result, spellID, null);
+    } else {
+      console.log('Cast failed:', result.error);
+    }
+  } catch (err) { console.error('Ground cast error:', err); }
 }
 
 function enterCastingState(spellID, targetGUID, castTimeMs, schoolName) {
@@ -394,6 +519,93 @@ function hideCastBar() {
   document.getElementById('cast-bar').classList.add('hidden');
   // Re-enable buttons that aren't on cooldown
   document.querySelectorAll('.spell-btn').forEach(b => b.disabled = false);
+}
+
+// ---- Channeling State ----
+let channelingState = false;
+let channelSpellID = null;
+let channelDuration = 0;
+let channelStartTime = 0;
+let channelTimer = null;
+let channelDestX = 0;
+let channelDestZ = 0;
+let blizzardAreaMesh = null;
+
+function enterChannelingState(spellID, durationMs, destX, destZ) {
+  channelingState = true;
+  channelSpellID = spellID;
+  channelDuration = durationMs;
+  channelStartTime = performance.now();
+  channelDestX = destX || 0;
+  channelDestZ = destZ || 0;
+
+  // Show cast bar as channel bar (countdown from 100% to 0%)
+  const bar = document.getElementById('cast-bar');
+  bar.classList.remove('hidden');
+  const spell = spellMap[spellID];
+  document.getElementById('cast-bar-name').textContent = spell ? spell.name : 'Channeling';
+  document.getElementById('cast-bar-icon').innerHTML = SCHOOL_ICONS.Frost || '';
+  const fill = document.getElementById('cast-bar-fill');
+  fill.style.background = '#44aaff'; // frost blue for channel
+  fill.style.width = '100%';
+
+  // Disable spell buttons
+  document.querySelectorAll('.spell-btn').forEach(b => b.disabled = true);
+
+  // Show Blizzard area circle
+  if (destX != null && destZ != null) {
+    const radius = Math.max(...(spell?.effectsDetail || []).map(e => e.radius || 0), 1);
+    showBlizzardArea(destX, destZ, radius);
+  }
+
+  // Animate channel bar counting down
+  if (channelTimer) cancelAnimationFrame(channelTimer);
+  function animateChannelBar() {
+    if (!channelingState) return;
+    const elapsed = performance.now() - channelStartTime;
+    const pct = Math.max(0, 1 - elapsed / channelDuration);
+    fill.style.width = (pct * 100) + '%';
+    const remaining = Math.max(0, (channelDuration - elapsed) / 1000);
+    document.getElementById('cast-bar-time').textContent = remaining.toFixed(1) + 's';
+    channelTimer = requestAnimationFrame(animateChannelBar);
+  }
+  channelTimer = requestAnimationFrame(animateChannelBar);
+}
+
+function exitChannelingState() {
+  channelingState = false;
+  channelSpellID = null;
+  if (channelTimer) { cancelAnimationFrame(channelTimer); channelTimer = null; }
+  hideCastBar();
+  removeBlizzardArea();
+}
+
+function showBlizzardArea(x, z, radius) {
+  removeBlizzardArea();
+  const scene = getScene();
+  const geo = new THREE.RingGeometry(0, radius, 48);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0x88ccff,
+    transparent: true,
+    opacity: 0.2,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  blizzardAreaMesh = new THREE.Mesh(geo, mat);
+  blizzardAreaMesh.rotation.x = -Math.PI / 2;
+  blizzardAreaMesh.position.set(x, 0.05, z);
+  blizzardAreaMesh.renderOrder = 998;
+  scene.add(blizzardAreaMesh);
+}
+
+function removeBlizzardArea() {
+  if (blizzardAreaMesh) {
+    const scene = getScene();
+    scene.remove(blizzardAreaMesh);
+    blizzardAreaMesh.geometry.dispose();
+    blizzardAreaMesh.material.dispose();
+    blizzardAreaMesh = null;
+  }
 }
 
 // ---- SSE: Periodic Damage ----
@@ -737,10 +949,14 @@ function renderActionBar(spells) {
         if (sp.id === castingSpellID) cancelCast();
         return;
       }
-      if (selectedTargetGUID) {
+      // Check if spell is AoE (has radius on any effect)
+      const isAoE = (sp.effectsDetail || []).some(e => e.radius > 0);
+      if (isAoE) {
+        enterTargetingMode(sp.id, 'ground');
+      } else if (selectedTargetGUID) {
         castSpell(sp.id, selectedTargetGUID);
       } else {
-        enterTargetingMode(sp.id);
+        enterTargetingMode(sp.id, 'unit');
       }
     });
     container.appendChild(btn);
@@ -942,6 +1158,33 @@ setInterval(() => {
     }
   }
 }, 500);
+
+// ---- WASD Movement ----
+const MOVE_SPEED = 10; // units per second (must match character.js)
+
+function processWASD(dt) {
+  const dx = (wasdKeys.d ? 1 : 0) - (wasdKeys.a ? 1 : 0);
+  const dz = (wasdKeys.s ? 1 : 0) - (wasdKeys.w ? 1 : 0); // W=-Z, S=+Z (screen up/down)
+  if (dx === 0 && dz === 0) return;
+
+  const casterGroup = characters.find(c => c.userData.guid == activeCasterGUID);
+  if (!casterGroup) return;
+
+  // Interrupt any active casting/channeling on WASD movement (WoW behavior)
+  // Note: 'casting' is a cast-time spell, 'channeling' is set via channelingState flag
+  if (castingState === 'casting') {
+    cancelCast(); // calls /api/cast/cancel and resets local state
+  } else if (channelingState) {
+    // channelingState is a separate flag set by enterChannelingState()
+    apiPost('/api/cast/cancel', null).catch(() => {});
+    exitChannelingState();
+  }
+
+  const newX = casterGroup.position.x + dx * MOVE_SPEED * dt;
+  const newZ = casterGroup.position.z + dz * MOVE_SPEED * dt;
+  moveUnit(casterGroup, newX, newZ);
+  apiPost('/api/units/move', { guid: activeCasterGUID, x: newX, z: newZ }).catch(() => {});
+}
 
 // ---- Start ----
 init();

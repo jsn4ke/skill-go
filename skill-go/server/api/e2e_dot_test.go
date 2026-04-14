@@ -30,12 +30,12 @@ func TestE2E_FireballDoT(t *testing.T) {
 	// Build the aura exactly as makeAuraHandler would for Fireball effect[1]
 	// spellId=38692, effectIndex=1, apply_aura, fire, value=21, tickInterval=2000, duration=8000
 	fireballEffect := spelldef.SpellEffectInfo{
-		EffectIndex:         1,
-		EffectType:          spelldef.SpellEffectApplyAura,
-		SchoolMask:          spelldef.SchoolMaskFire,
-		BasePoints:          21,
-	PeriodicTickInterval: 2000,
-		AuraDuration:        8000,
+		EffectIndex:          1,
+		EffectType:           spelldef.SpellEffectApplyAura,
+		SchoolMask:           spelldef.SchoolMaskFire,
+		BasePoints:           21,
+		PeriodicTickInterval: 2000,
+		AuraDuration:         8000,
 	}
 
 	// Apply aura through makeAuraHandler (same code path as real cast)
@@ -86,8 +86,8 @@ func TestE2E_FireballDoT(t *testing.T) {
 	// Run handleAuraUpdate (same as auraTicker would trigger)
 	gl := &GameLoop{
 		auraMgrs: auraMgrs,
-		recorder:  trace.NewFlowRecorder(),
-		hub:       trace.NewStreamHub(10),
+		recorder: trace.NewFlowRecorder(),
+		hub:      trace.NewStreamHub(10),
 	}
 	gl.handleAuraUpdate(Command{})
 
@@ -113,8 +113,8 @@ type testCasterInfo struct {
 	trace     *trace.Trace
 }
 
-func (c *testCasterInfo) GetSpellID() uint32      { return c.spellID }
-func (c *testCasterInfo) GetSpellName() string    { return c.spellName }
-func (c *testCasterInfo) Caster() *unit.Unit      { return c.caster }
-func (c *testCasterInfo) Targets() []*unit.Unit    { return c.targets }
-func (c *testCasterInfo) GetTrace() *trace.Trace  { return c.trace }
+func (c *testCasterInfo) GetSpellID() uint32     { return c.spellID }
+func (c *testCasterInfo) GetSpellName() string   { return c.spellName }
+func (c *testCasterInfo) Caster() *unit.Unit     { return c.caster }
+func (c *testCasterInfo) Targets() []*unit.Unit  { return c.targets }
+func (c *testCasterInfo) GetTrace() *trace.Trace { return c.trace }
