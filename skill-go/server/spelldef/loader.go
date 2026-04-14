@@ -230,25 +230,43 @@ func parseEffectRow(row []string) (uint32, SpellEffectInfo, error) {
 		}
 	}
 
-	// Optional columns (7+): auraType, miscValue, triggerSpellId
-	if len(row) > 7 {
-		if v := strings.TrimSpace(row[7]); v != "" {
-			eff.AuraType, err = parseInt32(row[7], "auraType")
+	// For school_damage: read periodicType (col 5) and amplitude (col 6)
+	// In the 12-col format: 0=spellId,1=index,2=type,3=school,4=value,
+	// 5=periodicType,6=amplitude,7=dummy1,8=dummy2,9=auraType,10=miscValue,11=triggerSpellId
+	if et == SpellEffectSchoolDamage {
+		if len(row) > 6 {
+			if v := strings.TrimSpace(row[6]); v != "" {
+				amp, aerr := strconv.ParseInt(v, 10, 32)
+				if aerr != nil {
+					return 0, eff, fmt.Errorf("parse amplitude: %w", aerr)
+				}
+				// amplitude is the per-tick damage for periodic DoT → overwrite BasePoints
+				if amp != 0 {
+					eff.BasePoints = int32(amp)
+				}
+			}
+		}
+	}
+
+	// auraType (col 9), miscValue (col 10), triggerSpellId (col 11)
+	if len(row) > 9 {
+		if v := strings.TrimSpace(row[9]); v != "" {
+			eff.AuraType, err = parseInt32(row[9], "auraType")
 			if err != nil {
 				return 0, eff, fmt.Errorf("parse auraType: %w", err)
 			}
 		}
 	}
-	if len(row) > 8 {
-		if v := strings.TrimSpace(row[8]); v != "" {
-			eff.MiscValue, err = parseInt32(row[8], "miscValue")
+	if len(row) > 10 {
+		if v := strings.TrimSpace(row[10]); v != "" {
+			eff.MiscValue, err = parseInt32(row[10], "miscValue")
 			if err != nil {
 				return 0, eff, fmt.Errorf("parse miscValue: %w", err)
 			}
 		}
 	}
-	if len(row) > 9 {
-		if v := strings.TrimSpace(row[9]); v != "" {
+	if len(row) > 11 {
+		if v := strings.TrimSpace(row[11]); v != "" {
 			id, perr := strconv.ParseUint(v, 10, 32)
 			if perr != nil {
 				return 0, eff, fmt.Errorf("parse triggerSpellId: %w", perr)
