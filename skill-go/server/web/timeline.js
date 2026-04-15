@@ -80,11 +80,12 @@ export function processEvents(events, characters, casterGUID, selectedTargetGUID
           const resultCode = fields.result;
           const schoolName = SCHOOL_MASK_TO_NAME[fields.school] || 'Fire';
 
-          // Skip projectile for channeled AoE spells (e.g. Blizzard spell=10).
+          // Skip projectile for channeled AoE spells (e.g. Blizzard).
           // For these spells, damage comes from the area effect, not a traveling projectile.
           // Spawning a projectile causes visual desync since HP is updated immediately
           // via SSE but the projectile takes 600ms+ to arrive.
-          const isChanneledAoE = lastSpellID === 10; // Blizzard
+          const spellData = spellMap_entry(lastSpellID);
+          const isChanneledAoE = spellData && spellData.isChanneled && (spellData.effectsDetail || []).some(e => (e.radius || 0) > 0);
 
           if (!isChanneledAoE) {
             spawnProjectile(casterGroup, targetGroup, schoolName);

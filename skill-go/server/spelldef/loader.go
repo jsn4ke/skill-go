@@ -58,9 +58,9 @@ func LoadSpells(dataDir string) ([]SpellInfo, error) {
 		return nil, fmt.Errorf("spells.csv: no data rows")
 	}
 
-	// Pad rows to 9 columns so optional fields are always at fixed indices
+	// Pad rows to 12 columns so optional fields are always at fixed indices
 	for i := range spellRows {
-		for len(spellRows[i]) < 9 {
+		for len(spellRows[i]) < 12 {
 			spellRows[i] = append(spellRows[i], "")
 		}
 	}
@@ -88,9 +88,9 @@ func LoadSpells(dataDir string) ([]SpellInfo, error) {
 		return nil, fmt.Errorf("read spell_effects.csv: %w", err)
 	}
 
-	// Pad rows to 10 columns so optional fields are always at fixed indices
+	// Pad rows to 13 columns so optional fields are always at fixed indices
 	for i := range effectRows {
-		for len(effectRows[i]) < 10 {
+		for len(effectRows[i]) < 13 {
 			effectRows[i] = append(effectRows[i], "")
 		}
 	}
@@ -170,6 +170,23 @@ func parseSpellRow(row []string, si *SpellInfo) error {
 	}
 
 	si.RangeMax, err = parseFloat64(row[8], "rangeYards")
+	if err != nil {
+		return err
+	}
+
+	// Channel fields (cols 9-11)
+	if v := strings.TrimSpace(row[9]); v != "" {
+		ic, perr := strconv.ParseInt(v, 10, 32)
+		if perr != nil {
+			return fmt.Errorf("parse isChanneled: %w", perr)
+		}
+		si.IsChanneled = ic != 0
+	}
+	si.ChannelDuration, err = parseInt32(row[10], "channelDuration")
+	if err != nil {
+		return err
+	}
+	si.TickInterval, err = parseInt32(row[11], "tickInterval")
 	if err != nil {
 		return err
 	}
@@ -272,6 +289,14 @@ func parseEffectRow(row []string) (uint32, SpellEffectInfo, error) {
 				return 0, eff, fmt.Errorf("parse triggerSpellId: %w", perr)
 			}
 			eff.TriggerSpellID = uint32(id)
+		}
+	}
+
+	// radius (col 12)
+	if len(row) > 12 {
+		eff.Radius, err = parseFloat64(row[12], "radius")
+		if err != nil {
+			return 0, eff, err
 		}
 	}
 

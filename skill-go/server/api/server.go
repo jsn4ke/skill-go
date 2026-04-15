@@ -69,17 +69,20 @@ type UnitJSON struct {
 
 // SpellJSON represents a spell definition for the API.
 type SpellJSON struct {
-	ID            uint32             `json:"id"`
-	Name          string             `json:"name"`
-	SchoolMask    uint32             `json:"schoolMask"`
-	SchoolName    string             `json:"schoolName"`
-	CastTime      int32              `json:"castTime"`
-	CD            int32              `json:"cooldown"`
-	PowerCost     int32              `json:"powerCost"`
-	MaxTargets    int                `json:"maxTargets"`
-	CategoryCD    int32              `json:"categoryCD"`
-	Effects       []string           `json:"effects"`
-	EffectsDetail []EffectDetailJSON `json:"effectsDetail"`
+	ID              uint32             `json:"id"`
+	Name            string             `json:"name"`
+	SchoolMask      uint32             `json:"schoolMask"`
+	SchoolName      string             `json:"schoolName"`
+	CastTime        int32              `json:"castTime"`
+	CD              int32              `json:"cooldown"`
+	PowerCost       int32              `json:"powerCost"`
+	MaxTargets      int                `json:"maxTargets"`
+	CategoryCD      int32              `json:"categoryCD"`
+	IsChanneled     bool               `json:"isChanneled"`
+	ChannelDuration int32              `json:"channelDuration"`
+	TickInterval    int32              `json:"tickInterval"`
+	Effects         []string           `json:"effects"`
+	EffectsDetail   []EffectDetailJSON `json:"effectsDetail"`
 }
 
 // EffectDetailJSON provides full effect parameters for the config editor.
@@ -216,6 +219,7 @@ func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 		SchoolName: schoolName(s.SchoolMask), CastTime: s.CastTime,
 		CD: s.RecoveryTime, PowerCost: s.PowerCost,
 		MaxTargets: s.MaxTargets, CategoryCD: s.CategoryRecoveryTime,
+		IsChanneled: s.IsChanneled, ChannelDuration: s.ChannelDuration, TickInterval: s.TickInterval,
 		Effects: effectNames, EffectsDetail: effectDetails,
 	}
 }
