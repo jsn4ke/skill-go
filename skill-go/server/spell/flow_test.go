@@ -419,14 +419,14 @@ func TestFlow_CastCancelled(t *testing.T) {
 
 // TestFlow_DelayedHit verifies the delayed hit path: prepare -> cast ->
 // delayed_hit_path -> launch -> delayed_hit_arrived -> hit -> finish.
-// Uses a short DelayMs (50ms) and calls WaitDelayedHits() to block until
+// Uses a high MissileSpeed and calls WaitDelayedHits() to block until
 // the delayed hits complete.
 func TestFlow_DelayedHit(t *testing.T) {
 	info := &spelldef.SpellInfo{
 		ID:       105,
 		Name:     "DelayedFireball",
 		CastTime: 0,
-		DelayMs:  50,
+		MissileSpeed: 9999, // effectively instant for close-range test
 		Effects: []spelldef.SpellEffectInfo{
 			{EffectIndex: 0, EffectType: spelldef.SpellEffectSchoolDamage},
 		},

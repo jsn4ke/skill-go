@@ -81,6 +81,7 @@ type SpellJSON struct {
 	IsChanneled     bool               `json:"isChanneled"`
 	ChannelDuration int32              `json:"channelDuration"`
 	TickInterval    int32              `json:"tickInterval"`
+	MissileSpeed    float64            `json:"missileSpeed"`
 	Effects         []string           `json:"effects"`
 	EffectsDetail   []EffectDetailJSON `json:"effectsDetail"`
 }
@@ -219,7 +220,7 @@ func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 		SchoolName: schoolName(s.SchoolMask), CastTime: s.CastTime,
 		CD: s.RecoveryTime, PowerCost: s.PowerCost,
 		MaxTargets: s.MaxTargets, CategoryCD: s.CategoryRecoveryTime,
-		IsChanneled: s.IsChanneled, ChannelDuration: s.ChannelDuration, TickInterval: s.TickInterval,
+		IsChanneled: s.IsChanneled, ChannelDuration: s.ChannelDuration, TickInterval: s.TickInterval, MissileSpeed: s.MissileSpeed,
 		Effects: effectNames, EffectsDetail: effectDetails,
 	}
 }

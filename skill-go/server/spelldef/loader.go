@@ -58,9 +58,9 @@ func LoadSpells(dataDir string) ([]SpellInfo, error) {
 		return nil, fmt.Errorf("spells.csv: no data rows")
 	}
 
-	// Pad rows to 12 columns so optional fields are always at fixed indices
+	// Pad rows to 13 columns so optional fields are always at fixed indices
 	for i := range spellRows {
-		for len(spellRows[i]) < 12 {
+		for len(spellRows[i]) < 13 {
 			spellRows[i] = append(spellRows[i], "")
 		}
 	}
@@ -187,6 +187,10 @@ func parseSpellRow(row []string, si *SpellInfo) error {
 		return err
 	}
 	si.TickInterval, err = parseInt32(row[11], "tickInterval")
+	if err != nil {
+		return err
+	}
+	si.MissileSpeed, err = parseFloat64(row[12], "missileSpeed")
 	if err != nil {
 		return err
 	}

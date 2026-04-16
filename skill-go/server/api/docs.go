@@ -101,7 +101,7 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 				{Name: "Effects", Type: "[]SpellEffectInfo", Description: "法术效果列表（最多多个效果）", Values: "见 spellEffectInfo 节"},
 				{Name: "IsAutoRepeat", Type: "bool", Description: "是否为自动重复施法（如自动射击）", Values: "false"},
 				{Name: "PreventionType", Type: "PreventionType", Description: "可被何种方式打断（沉默/安抚）", Values: "0=None, 1=Silence, 2=Pacify"},
-				{Name: "DelayMs", Type: "int32", Description: "延迟命中时间（毫秒，用于飞行弹道）", Values: "0, 500"},
+				{Name: "MissileSpeed", Type: "float64", Description: "弹道飞行速度（码/秒，0=无弹道即时命中）", Values: "0, 14"},
 				{Name: "IsChanneled", Type: "bool", Description: "是否为引导法术（如暴风雪）", Values: "false"},
 				{Name: "ChannelDuration", Type: "int32", Description: "引导总时长（毫秒）", Values: "8000"},
 				{Name: "TickInterval", Type: "int32", Description: "引导期间每次跳动的间隔（毫秒）", Values: "1000, 2000"},

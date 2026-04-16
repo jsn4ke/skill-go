@@ -77,7 +77,7 @@
 | **Effects** | `[]SpellEffectInfo` | 法术效果列表（最多多个效果） | `见 spellEffectInfo 节` |
 | **IsAutoRepeat** | `bool` | 是否为自动重复施法（如自动射击） | `false` |
 | **PreventionType** | `PreventionType` | 可被何种方式打断（沉默/安抚） | `0=None, 1=Silence, 2=Pacify` |
-| **DelayMs** | `int32` | 延迟命中时间（毫秒，用于飞行弹道） | `0, 500` |
+| **MissileSpeed** | `float64` | 弹道飞行速度（码/秒，0=无弹道即时命中） | `0, 14` |
 | **IsChanneled** | `bool` | 是否为引导法术（如暴风雪） | `false` |
 | **ChannelDuration** | `int32` | 引导总时长（毫秒） | `8000` |
 | **TickInterval** | `int32` | 引导期间每次跳动的间隔（毫秒） | `1000, 2000` |

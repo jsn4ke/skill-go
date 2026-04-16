@@ -103,8 +103,8 @@ type SpellInfo struct {
 	IsAutoRepeat         bool
 	PreventionType       PreventionType
 
-	// Delayed execution
-	DelayMs int32 // > 0 = delayed hit path (projectile travel time in ms)
+	// Missile speed in yards/sec. > 0 = delayed hit path (projectile travel). 0 = instant hit.
+	MissileSpeed float64
 
 	// Channeled spell
 	IsChanneled     bool

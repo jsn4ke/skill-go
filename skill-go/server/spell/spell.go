@@ -325,7 +325,7 @@ func (s *SpellContext) Cast() spelldef.CastResult {
 		return s.startChannel()
 	case s.Info.IsEmpower:
 		return s.startEmpower()
-	case s.Info.DelayMs > 0:
+	case s.Info.MissileSpeed > 0:
 		return s.startDelayedHit()
 	default:
 		// Immediate path
@@ -405,15 +405,22 @@ func (s *SpellContext) Finish() spelldef.CastResult {
 
 func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 	spellID, spellName := s.Info.ID, s.Info.Name
+	now := time.Now()
+	const minDelayMs = 150 // server scheduling granularity
+
 	s.Trace.Event(trace.SpanSpell, "delayed_hit_path", spellID, spellName, map[string]interface{}{
-		"delay_ms":    s.Info.DelayMs,
-		"targetCount": len(s.Targets),
+		"missileSpeed": s.Info.MissileSpeed,
+		"targetCount":  len(s.Targets),
 	})
 
-	now := time.Now()
-	delay := time.Duration(s.Info.DelayMs) * time.Millisecond
-
 	for _, target := range s.Targets {
+		dist := s.Caster.DistanceTo(target)
+		delayMs := dist/s.Info.MissileSpeed*1000
+		if delayMs < minDelayMs {
+			delayMs = minDelayMs
+		}
+		delay := time.Duration(delayMs) * time.Millisecond
+
 		for _, eff := range s.Info.Effects {
 			dh := delayedHit{
 				target: target,
@@ -422,6 +429,12 @@ func (s *SpellContext) startDelayedHit() spelldef.CastResult {
 			}
 			s.delayedHits = append(s.delayedHits, dh)
 		}
+
+		s.Trace.Event(trace.SpanSpell, "delayed_hit_scheduled", spellID, spellName, map[string]interface{}{
+			"target":    target.Name,
+			"distance":  dist,
+			"delay_ms":  delayMs,
+		})
 	}
 
 	s.Trace.Event(trace.SpanSpell, "state_change", spellID, spellName, map[string]interface{}{
@@ -649,7 +662,7 @@ func (s *SpellContext) ReleaseEmpower() spelldef.CastResult {
 		}
 	}
 
-	if s.Info.DelayMs > 0 {
+	if s.Info.MissileSpeed > 0 {
 		return s.startDelayedHit()
 	}
 
