@@ -58,9 +58,9 @@ func LoadSpells(dataDir string) ([]SpellInfo, error) {
 		return nil, fmt.Errorf("spells.csv: no data rows")
 	}
 
-	// Pad rows to 13 columns so optional fields are always at fixed indices
+	// Pad rows to 16 columns so optional fields are always at fixed indices
 	for i := range spellRows {
-		for len(spellRows[i]) < 13 {
+		for len(spellRows[i]) < 16 {
 			spellRows[i] = append(spellRows[i], "")
 		}
 	}
@@ -194,6 +194,30 @@ func parseSpellRow(row []string, si *SpellInfo) error {
 	if err != nil {
 		return err
 	}
+
+	// Toggle fields (cols 13-14)
+	if v := strings.TrimSpace(row[13]); v != "" {
+		it, perr := strconv.ParseInt(v, 10, 32)
+		if perr != nil {
+			return fmt.Errorf("parse isToggle: %w", perr)
+		}
+		si.IsToggle = it != 0
+	}
+	if len(row) > 14 {
+		si.ToggleGroup = strings.TrimSpace(row[14])
+	}
+
+	// RequiresAura field (col 15)
+	if len(row) > 15 {
+		if v := strings.TrimSpace(row[15]); v != "" {
+			auraID, aerr := strconv.ParseUint(v, 10, 32)
+			if aerr != nil {
+				return fmt.Errorf("parse requiresAura: %w", aerr)
+			}
+			si.RequiresAura = uint32(auraID)
+		}
+	}
+
 	return nil
 }
 
@@ -301,6 +325,16 @@ func parseEffectRow(row []string) (uint32, SpellEffectInfo, error) {
 		eff.Radius, err = parseFloat64(row[12], "radius")
 		if err != nil {
 			return 0, eff, err
+		}
+	}
+
+	// breakOnDamage (col 7, dummy1)
+	if len(row) > 7 {
+		if v := strings.TrimSpace(row[7]); v != "" {
+			val, berr := strconv.ParseInt(v, 10, 32)
+			if berr == nil && val != 0 {
+				eff.BreakOnDamage = true
+			}
 		}
 	}
 

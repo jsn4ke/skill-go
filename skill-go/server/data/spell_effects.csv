@@ -8,3 +8,10 @@ spellId,index,type,school,value,periodicType,amplitude,dummy1,dummy2,auraType,mi
 7922,0,apply_aura,physical,0,0,1500,0,0,1,4,8,
 10,0,school_damage,frost,25,0,8,0,0,0,0,0,8
 10,1,apply_aura,frost,65,0,1500,0,0,1,10,8,
+1784,0,apply_aura,physical,0,0,0,1,0,0,10,0,
+2457,0,apply_aura,physical,50,0,0,0,0,0,5,0,
+71,0,apply_aura,physical,500,0,0,0,0,0,7,0,
+2458,0,apply_aura,physical,5,0,0,0,0,0,8,0,
+77,0,weapon_damage,physical,0,0,0,0,0,0,0,0,
+2565,0,apply_aura,physical,75,0,0,0,0,0,10,0,
+18499,0,apply_aura,physical,10,0,0,0,0,0,9,0,

@@ -115,6 +115,8 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 				{Name: "ChargeRecoveryTime", Type: "int32", Description: "恢复一次充能的时间（毫秒）", Values: "0, 15000"},
 				{Name: "RecoveryCategory", Type: "int32", Description: "冷却分类，同分类共享 CD", Values: "0"},
 				{Name: "Reflectable", Type: "bool", Description: "是否可被法术反射", Values: "false"},
+				{Name: "IsToggle", Type: "bool", Description: "是否为切换型技能（反复按切换 on/off）", Values: "false"},
+				{Name: "ToggleGroup", Type: "string", Description: "互斥组名，同组只能激活一个（空=独立切换）", Values: "\"\", warrior_stance"},
 			},
 		},
 		{

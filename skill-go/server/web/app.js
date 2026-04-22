@@ -139,6 +139,18 @@ async function init() {
       exitChannelingState();
       netClient.get('/api/units').then(units => reconcileUnits(units, characters)).catch(() => {});
     }
+    // Toggle spell events — update button highlight and unit state
+    if (event.span === 'spell' && (event.event === 'toggle.activated' || event.event === 'toggle.deactivated' || event.event === 'toggle.broken')) {
+      updateToggleButtons(event);
+      netClient.get('/api/units').then(units => {
+        reconcileUnits(units, characters);
+        updateSelfPanel(units.find(u => u.guid == activeCasterGUID));
+        if (selectedTargetGUID) {
+          const targetData = units.find(u => u.guid == selectedTargetGUID);
+          if (targetData) updateEnemyInfo(targetData);
+        }
+      }).catch(() => {});
+    }
   });
   sseSub.onReconnect = (status) => console.log('[SSE]', status);
   console.log('[SSE] subscription created for /api/trace/stream');
@@ -178,6 +190,7 @@ async function init() {
     updateSelfPanel(units.find(u => u.guid == activeCasterGUID));
     updateEnemyDropdown(units);
     populateCasterDropdown(units);
+    syncToggleButtons(units);
   } catch (err) {
     console.error('Init failed:', err);
   }
@@ -420,6 +433,27 @@ async function castSpell(spellID, targetGUID) {
     } else if (result.result === 'channeling') {
       enterChannelingState(spellID, result.channelDuration, result.destX, result.destZ);
       if (result.events) processEvents(result.events, characters, activeCasterGUID, targetGUID);
+    } else if (result.result === 'toggle_on' || result.result === 'toggle_off') {
+      processCastResult(result, spellID, targetGUID);
+      // Update button highlight immediately
+      const btn = document.getElementById('spell-btn-' + spellID);
+      if (btn) {
+        if (result.result === 'toggle_on') {
+          btn.classList.add('toggle-active');
+          // For same ToggleGroup, deactivate other buttons
+          const spell = spellMap[spellID];
+          if (spell && spell.toggleGroup) {
+            for (const s of Object.values(spellMap)) {
+              if (s.toggleGroup === spell.toggleGroup && s.id !== spellID) {
+                const otherBtn = document.getElementById('spell-btn-' + s.id);
+                if (otherBtn) otherBtn.classList.remove('toggle-active');
+              }
+            }
+          }
+        } else {
+          btn.classList.remove('toggle-active');
+        }
+      }
     } else if (result.result === 'success') {
       processCastResult(result, spellID, targetGUID);
     } else {
@@ -580,6 +614,45 @@ function exitChannelingState() {
   removeBlizzardArea();
 }
 
+// syncToggleButtons restores toggle-active state from unit auras (called on init/reconcile).
+function syncToggleButtons(units) {
+  const caster = units.find(u => u.guid == activeCasterGUID);
+  if (!caster) return;
+  const activeSpellIDs = new Set((caster.auras || []).map(a => a.spellID));
+  for (const s of Object.values(spellMap)) {
+    const btn = document.getElementById('spell-btn-' + s.id);
+    if (!btn) continue;
+    if (s.isToggle) {
+      if (activeSpellIDs.has(s.id)) btn.classList.add('toggle-active');
+      else btn.classList.remove('toggle-active');
+    }
+  }
+  updateStanceBar();
+}
+
+// updateToggleButtons highlights/de-highlights toggle spell buttons based on SSE events.
+function updateToggleButtons(event) {
+  const spellID = event.spellId || (event.fields && event.fields.spellID);
+  if (!spellID) return;
+  const btn = document.getElementById('spell-btn-' + spellID);
+  if (!btn) return;
+  if (event.event === 'toggle.activated') {
+    btn.classList.add('toggle-active');
+    // For same ToggleGroup spells, remove toggle-active from others
+    const spell = spellMap[spellID];
+    if (spell && spell.toggleGroup) {
+      for (const s of Object.values(spellMap)) {
+        if (s.toggleGroup === spell.toggleGroup && s.id !== spellID) {
+          const otherBtn = document.getElementById('spell-btn-' + s.id);
+          if (otherBtn) otherBtn.classList.remove('toggle-active');
+        }
+      }
+    }
+  } else {
+    btn.classList.remove('toggle-active');
+  }
+}
+
 function showBlizzardArea(x, z, radius) {
   removeBlizzardArea();
   const scene = getScene();
@@ -658,16 +731,16 @@ function processCastResult(result, spellID, targetGUID) {
   if (result.result === 'success') {
     processEvents(result.events || [], characters, activeCasterGUID, targetGUID);
     updateStats(result.events || []);
-    updateSelfPanel(result.units?.find(u => u.guid == activeCasterGUID));
     if (!targetDied && targetGUID) {
       const targetData = result.units?.find(u => u.guid == targetGUID);
       if (targetData) { updateEnemyInfo(targetData); updateTargetLock(targetData); }
     }
     addSpellLogEntry(result.events || [], spellMap[spellID]);
     addServerLogEntry(result.events || [], spellMap[spellID]);
-  } else {
-    console.log('Cast result:', result.result, result.error);
   }
+
+  // Always refresh self-panel (toggle_on/toggle_off need it for aura + stat display)
+  updateSelfPanel(result.units?.find(u => u.guid == activeCasterGUID));
 
   // Auto-remove dead units
   if (result.units) {
@@ -702,8 +775,26 @@ function updateSelfPanel(u) {
   document.getElementById('self-mp-bar').className = 'panel-bar-fill mp-' + hpTier(mpPct);
   document.getElementById('self-mp-val').textContent = `${u.mana}/${u.maxMana}`;
   document.getElementById('self-sp').textContent = u.spellPower;
-  document.getElementById('self-crit').textContent = u.critSpell + '%';
-  document.getElementById('self-hit').textContent = u.hitSpell + '%';
+  document.getElementById('self-ap').textContent = u.attackPower;
+  document.getElementById('self-armor').textContent = u.armor;
+  document.getElementById('self-crit').textContent = u.critMelee + '/' + u.critSpell + '%';
+  document.getElementById('self-hit').textContent = u.hitMelee + '/' + u.hitSpell + '%';
+
+  // Render active auras
+  const aurasEl = document.getElementById('self-auras');
+  if (aurasEl) {
+    const auras = u.auras || [];
+    if (auras.length === 0) {
+      aurasEl.innerHTML = '';
+    } else {
+      aurasEl.innerHTML = auras.map(a => {
+        const typeClass = a.auraType === 0 ? 'aura-buff' : 'aura-debuff';
+        const durationText = a.duration > 0 ? ` (${(a.duration/1000).toFixed(0)}s)` : '';
+        return `<div class="aura-tag ${typeClass}" title="Spell ${a.spellID}${durationText}">${a.name}${durationText}</div>`;
+      }).join('');
+    }
+  }
+  updateStanceBar();
 }
 
 // ---- Enemy Panel ----
@@ -949,6 +1040,11 @@ function renderActionBar(spells) {
         if (sp.id === castingSpellID) cancelCast();
         return;
       }
+      // Toggle spells cast directly without needing a target
+      if (sp.isToggle) {
+        castSpell(sp.id, null);
+        return;
+      }
       // Check if spell is AoE (has radius on any effect)
       const isAoE = (sp.effectsDetail || []).some(e => e.radius > 0);
       if (isAoE) {
@@ -960,6 +1056,72 @@ function renderActionBar(spells) {
       }
     });
     container.appendChild(btn);
+  }
+}
+
+// ---- Stance Skill Bar ----
+// updateStanceBar shows skills that require the current active toggle aura.
+function updateStanceBar() {
+  const bar = document.getElementById('stance-bar');
+  const label = document.getElementById('stance-bar-label');
+  const skills = document.getElementById('stance-skills');
+  if (!bar || !skills) return;
+
+  // Find caster's active aura spell IDs
+  const casterGroup = characters.find(c => c.userData.guid == activeCasterGUID);
+  const casterData = casterGroup?.userData?.unitData;
+  const activeAuraIDs = new Set((casterData?.auras || []).map(a => a.spellID));
+
+  // Collect all spells that require an aura AND that aura is active
+  const stanceSkills = [];
+  let currentStanceName = '';
+  for (const sp of spells) {
+    if (sp.requiresAura > 0) {
+      if (activeAuraIDs.has(sp.requiresAura)) {
+        stanceSkills.push(sp);
+      }
+      // Find the name of the active stance
+      if (activeAuraIDs.has(sp.requiresAura) && !currentStanceName) {
+        const stanceSpell = spellMap[sp.requiresAura];
+        if (stanceSpell) currentStanceName = stanceSpell.name;
+      }
+    }
+  }
+
+  if (stanceSkills.length === 0) {
+    bar.classList.add('hidden');
+    return;
+  }
+
+  bar.classList.remove('hidden');
+  label.textContent = currentStanceName || 'Stance';
+  skills.innerHTML = '';
+
+  for (const sp of stanceSkills) {
+    const btn = document.createElement('button');
+    btn.className = 'spell-btn';
+    btn.id = `stance-btn-${sp.id}`;
+    btn.title = `${sp.name} (${sp.schoolName})`;
+
+    const iconWrap = document.createElement('div');
+    iconWrap.className = 'spell-icon';
+    iconWrap.innerHTML = SCHOOL_ICONS[sp.schoolName] || SCHOOL_ICONS.Physical;
+    btn.appendChild(iconWrap);
+
+    const name = document.createElement('span');
+    name.className = 'spell-name';
+    name.textContent = sp.name;
+    btn.appendChild(name);
+
+    btn.addEventListener('click', () => {
+      if (castingState === 'casting') return;
+      if (sp.isToggle) { castSpell(sp.id, null); return; }
+      const isAoE = (sp.effectsDetail || []).some(e => e.radius > 0);
+      if (isAoE) { enterTargetingMode(sp.id, 'ground'); }
+      else if (selectedTargetGUID) { castSpell(sp.id, selectedTargetGUID); }
+      else { enterTargetingMode(sp.id, 'unit'); }
+    });
+    skills.appendChild(btn);
   }
 }
 
@@ -1073,6 +1235,7 @@ async function resetSession() {
     updateSelfPanel(units.find(u => u.guid == activeCasterGUID));
     updateEnemyDropdown(units);
     populateCasterDropdown(units);
+    syncToggleButtons(units);
   } catch (err) { console.error('Reset error:', err); }
 }
 
@@ -1125,13 +1288,18 @@ function updateSceneTheme() {
 // Caster dropdown change handler
 document.getElementById('caster-select').addEventListener('change', (e) => {
   activeCasterGUID = Number(e.target.value);
-  const caster = characters.find(c => c.userData.guid == activeCasterGUID);
-  if (caster && caster.userData.unitData) {
-    updateSelfPanel(caster.userData.unitData);
-  }
-  // Rebuild enemy dropdown to exclude new caster
-  const units = characters.map(c => c.userData.unitData).filter(Boolean);
-  updateEnemyDropdown(units);
+  // Re-fetch units from server to get latest aura/state data
+  netClient.get('/api/units').then(units => {
+    reconcileUnits(units);
+    const caster = units.find(u => u.guid == activeCasterGUID);
+    if (caster) updateSelfPanel(caster);
+    updateEnemyDropdown(units);
+    syncToggleButtons(units);
+  }).catch(() => {
+    // Fallback to cached data
+    const caster = characters.find(c => c.userData.guid == activeCasterGUID);
+    if (caster && caster.userData.unitData) updateSelfPanel(caster.userData.unitData);
+  });
 });
 
 // Enemy dropdown change handler

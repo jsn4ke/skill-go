@@ -297,6 +297,22 @@ body.light-theme {
 #target-lock-cancel:hover { background: rgba(200,50,50,0.6); color: #fff; }
 
 /* ---- Action bar ---- */
+/* ---- Stance Skill Bar ---- */
+#stance-bar {
+  position: absolute; bottom: 115px; left: 50%; transform: translateX(-50%);
+  pointer-events: auto; display: flex; align-items: center; gap: 8px;
+  background: var(--bg-panel); border: 1px solid var(--border-panel); border-radius: 8px;
+  padding: 6px 12px; min-height: 50px;
+}
+#stance-bar.hidden { display: none; }
+#stance-bar-label {
+  font-size: 0.7rem; color: #4fc3f7; font-weight: bold; white-space: nowrap;
+  padding-right: 8px; border-right: 1px solid var(--border-panel);
+}
+#stance-skills { display: flex; gap: 4px; }
+#stance-skills .spell-btn { width: 48px; height: 48px; }
+#stance-skills .spell-btn .spell-name { font-size: 0.5rem; }
+
 #action-bar {
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); pointer-events: auto;
 }
@@ -307,6 +323,8 @@ body.light-theme {
   cursor: pointer; overflow: hidden; transition: border-color 0.15s, opacity 0.15s;
 }
 .spell-btn.active { border-color: #e94560; box-shadow: 0 0 8px rgba(233,69,96,0.4); }
+.spell-btn.toggle-active { border-color: #4fc3f7; box-shadow: 0 0 12px rgba(79,195,247,0.6), inset 0 0 20px rgba(79,195,247,0.15); background: linear-gradient(135deg, rgba(79,195,247,0.15), rgba(79,195,247,0.05)); }
+.spell-btn.toggle-active .spell-icon { opacity: 1.0; }
 .spell-btn:hover:not(:disabled):not(.greyed) { border-color: #e94560; }
 .spell-btn:active:not(:disabled) { transform: scale(0.95); }
 .spell-btn:disabled, .spell-btn.greyed { cursor: not-allowed; opacity: 0.4; }
@@ -344,6 +362,8 @@ body.light-theme {
 .char-level { color: #aaa; font-size: 9px; text-shadow: 0 0 4px rgba(0,0,0,0.8); text-align: center; }
 .char-stun-label { color: #ffcc00; font-size: 12px; font-weight: bold; text-shadow: 0 0 6px rgba(255,200,0,0.6), 0 1px 3px rgba(0,0,0,0.9); text-align: center; white-space: nowrap; pointer-events: none; animation: stun-pulse 0.6s ease-in-out infinite alternate; }
 @keyframes stun-pulse { from { opacity: 0.7; transform: scale(1); } to { opacity: 1; transform: scale(1.1); } }
+.char-stealth-label { color: #88ddff; font-size: 12px; font-weight: bold; text-shadow: 0 0 8px rgba(100,200,255,0.6), 0 1px 3px rgba(0,0,0,0.9); text-align: center; white-space: nowrap; pointer-events: none; animation: stealth-pulse 1.2s ease-in-out infinite alternate; }
+@keyframes stealth-pulse { from { opacity: 0.5; transform: scale(1); } to { opacity: 1; transform: scale(1.08); } }
 .char-bars { text-align: center; min-width: 80px; }
 .bar-row { display: flex; align-items: center; gap: 3px; margin-bottom: 1px; }
 .bar-label { font-size: 8px; color: #aaa; width: 16px; text-align: right; }
@@ -457,3 +477,8 @@ body.light-theme {
 .enemy-aura-type.debuff { background: #5a2a2a; color: #ff8888; }
 .enemy-aura-name { flex: 1; color: #ccc; }
 .enemy-aura-time { color: #aaa; font-size: 10px; min-width: 40px; text-align: right; }
+/* Aura tags in self panel */
+.panel-auras { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.aura-tag { font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; border: 1px solid; }
+.aura-tag.aura-buff { color: #4fc3f7; border-color: rgba(79,195,247,0.4); background: rgba(79,195,247,0.1); }
+.aura-tag.aura-debuff { color: #ff6b6b; border-color: rgba(255,107,107,0.4); background: rgba(255,107,107,0.1); }

@@ -152,9 +152,11 @@ func NewGameLoop(fileSink *trace.FileSink, dataDir string) *GameLoop {
 
 	allUnits := []*unit.Unit{mage, warrior, target}
 
+	mageAuraMgr := aura.NewAuraManager(mage)
 	targetAuraMgr := aura.NewAuraManager(target)
 	warriorAuraMgr := aura.NewAuraManager(warrior)
 	auraMgrs := map[uint64]*aura.AuraManager{
+		mage.GUID:    mageAuraMgr,
 		target.GUID:  targetAuraMgr,
 		warrior.GUID: warriorAuraMgr,
 	}
@@ -195,6 +197,7 @@ func NewGameLoop(fileSink *trace.FileSink, dataDir string) *GameLoop {
 	}
 
 	effect.RegisterExtended(store, makeAuraHandler(auraProvider), gl.makeTriggerSpellHandler())
+	gl.setupBreakOnDamage()
 	gl.initSpellBook()
 
 	return gl
@@ -210,6 +213,31 @@ func (gl *GameLoop) initSpellBook() {
 		gl.spellBook[i] = &spells[i]
 		if spells[i].ID >= gl.nextSpellID {
 			gl.nextSpellID = spells[i].ID + 1
+		}
+	}
+}
+
+// setupBreakOnDamage installs OnDamageTaken callbacks on all units.
+func (gl *GameLoop) setupBreakOnDamage() {
+	for _, u := range gl.allUnits {
+		u.OnDamageTaken = gl.breakOnDamageCallback
+	}
+}
+
+// breakOnDamageCallback removes any toggle aura with BreakOnDamage=true from the damaged unit.
+func (gl *GameLoop) breakOnDamageCallback(damaged *unit.Unit, amount int32) {
+	mgr := gl.auraProvider.GetAuraManager(damaged)
+	if mgr == nil {
+		return
+	}
+	for _, a := range mgr.Auras {
+		if a.BreakOnDamage {
+			t := gl.newCastTrace()
+			mgr.RemoveAura(a, aura.RemoveModeCancelled, t, a.SpellID, a.SourceName)
+			t.Event(trace.SpanSpell, "toggle.broken", a.SpellID, a.SourceName, map[string]interface{}{
+				"target": damaged.Name,
+				"damage": amount,
+			})
 		}
 	}
 }
@@ -390,13 +418,19 @@ func (gl *GameLoop) handleCast(cmd Command) {
 		return
 	}
 
+	// Create trace early (needed for toggle spells and AoE targeting resolution)
+	castTrace := gl.newCastTrace()
+
+	// Handle toggle spells separately from normal cast flow
+	if spellInfo.IsToggle {
+		gl.handleToggleCast(cmd, spellInfo, caster, castTrace)
+		return
+	}
+
 	// Resolve targets
 	var targets []*unit.Unit
 	var aoDestX, aoDestZ *float64
 	var aoRadius float64
-
-	// Create trace early (needed for AoE targeting resolution)
-	castTrace := gl.newCastTrace()
 
 	if req.DestX != nil && req.DestZ != nil {
 		// Ground-targeted AoE: resolve via targeting package
@@ -514,6 +548,78 @@ func (gl *GameLoop) handleCast(cmd Command) {
 		SpellName:  spellInfo.Name,
 		SchoolName: schoolName(spellInfo.SchoolMask),
 	}})
+}
+
+// handleToggleCast processes toggle spells: on/off switching + ToggleGroup mutual exclusion.
+func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo, caster *unit.Unit, tr *trace.Trace) {
+	spellID := spellInfo.ID
+	spellName := spellInfo.Name
+	mgr := gl.auraProvider.GetAuraManager(caster)
+	if mgr == nil {
+		reply(cmd, Result{Err: "no aura manager for caster"})
+		return
+	}
+
+	// Check if caster already has this toggle aura
+	existing := mgr.GetAura(spellID)
+	if existing != nil {
+		// Toggle OFF: remove the aura
+		mgr.RemoveAura(existing, aura.RemoveModeCancelled, tr, spellID, spellName)
+		tr.Event(trace.SpanSpell, "toggle.deactivated", spellID, spellName, map[string]interface{}{
+			"target": caster.Name,
+		})
+		events := gl.collectAndResetEvents()
+		resp := gl.buildCastResponse(spelldef.CastResultSuccess, nil, events)
+		resp.Result = "toggle_off"
+		resp.SpellID = spellID
+		resp.SpellName = spellName
+		reply(cmd, Result{Data: resp})
+		return
+	}
+
+	// ToggleGroup mutual exclusion: remove same-group toggle if present
+	if spellInfo.ToggleGroup != "" {
+		for _, a := range mgr.Auras {
+			if a.ToggleGroup == spellInfo.ToggleGroup && a.SpellID != spellID {
+				mgr.RemoveAura(a, aura.RemoveModeCancelled, tr, a.SpellID, a.SourceName)
+				tr.Event(trace.SpanSpell, "toggle.deactivated", a.SpellID, a.SourceName, map[string]interface{}{
+					"target": caster.Name,
+					"reason": "mutual_exclusion",
+				})
+			}
+		}
+	}
+
+	// Toggle ON: create and apply the aura from spell effects
+	for _, eff := range spellInfo.Effects {
+		if eff.EffectType == spelldef.SpellEffectApplyAura {
+			a := &aura.Aura{
+				SpellID:     spellID,
+				SourceName:   spellName,
+				CasterGUID:  caster.GUID,
+				Caster:      caster,
+				AuraType:    aura.AuraType(eff.AuraType),
+				Duration:    0, // toggle auras are permanent (0 = infinite)
+				StackAmount: 1,
+				ToggleGroup: spellInfo.ToggleGroup,
+				BreakOnDamage: eff.BreakOnDamage,
+				Effects: []*aura.AuraEffect{
+					{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, MiscValue: eff.MiscValue, PeriodicTimer: eff.PeriodicTickInterval},
+				},
+			}
+			mgr.ApplyAura(a, tr, spellID, spellName)
+		}
+	}
+
+	tr.Event(trace.SpanSpell, "toggle.activated", spellID, spellName, map[string]interface{}{
+		"target": caster.Name,
+	})
+	events := gl.collectAndResetEvents()
+	resp := gl.buildCastResponse(spelldef.CastResultSuccess, nil, events)
+	resp.Result = "toggle_on"
+	resp.SpellID = spellID
+	resp.SpellName = spellName
+	reply(cmd, Result{Data: resp})
 }
 
 func (gl *GameLoop) handleCastComplete(cmd Command) {
@@ -1061,6 +1167,9 @@ func (gl *GameLoop) addUnit(name string, level uint8) *unit.Unit {
 
 	gl.allUnits = append(gl.allUnits, u)
 	gl.targets = append(gl.targets, u)
+
+	// Install BreakOnDamage callback for the new unit
+	u.OnDamageTaken = gl.breakOnDamageCallback
 
 	return u
 }

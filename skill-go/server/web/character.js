@@ -103,6 +103,16 @@ export function createCharacter(unitData) {
   group.add(stunLabel);
   group.userData.stunLabel = stunLabel;
 
+  // Stealth indicator (hidden by default)
+  const stealthDiv = document.createElement('div');
+  stealthDiv.className = 'char-stealth-label';
+  stealthDiv.textContent = '潜行';
+  stealthDiv.style.display = 'none';
+  const stealthLabel = new CSS2DObject(stealthDiv);
+  stealthLabel.position.set(0, 4.8, 0);
+  group.add(stealthLabel);
+  group.userData.stealthLabel = stealthLabel;
+
   addToScene(group);
   return group;
 }
@@ -163,6 +173,13 @@ export function updateCharacter(group, unitData) {
     stunEl.style.display = hasDebuff ? 'block' : 'none';
   }
 
+  // Stealth indicator — show "潜行" text above head
+  const stealthEl = d.stealthLabel?.element;
+  if (stealthEl) {
+    const hasStealth = unitData.auras?.some(a => a.spellID === 1784) || false;
+    stealthEl.style.display = hasStealth ? 'block' : 'none';
+  }
+
   // Speed modifier — track and apply visual slow effect
   const speedMod = unitData.speedMod != null ? unitData.speedMod : 1.0;
   d.speedMod = speedMod;
@@ -176,6 +193,21 @@ export function updateCharacter(group, unitData) {
     d.bodyMat.color.copy(roleColor).lerp(slowColor, 0.5);
     d.headMat.color.copy(roleColor).lerp(slowColor, 0.5);
   }
+
+  // Stealth visual — make character semi-transparent when Stealth (1784) aura is active
+  const hasStealth = unitData.auras?.some(a => a.spellID === 1784) || false;
+  if (hasStealth) {
+    d.bodyMat.transparent = true;
+    d.bodyMat.opacity = 0.3;
+    d.headMat.transparent = true;
+    d.headMat.opacity = 0.3;
+  } else {
+    d.bodyMat.transparent = false;
+    d.bodyMat.opacity = 1.0;
+    d.headMat.transparent = false;
+    d.headMat.opacity = 1.0;
+  }
+
   // If speedMod returns to 1.0, the dead/alive branch above restores normal color
 }
 

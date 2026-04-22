@@ -59,6 +59,7 @@ type SpellEffectInfo struct {
 	PeriodicTickInterval int32     // ms between periodic ticks (DoT/HoT), 0 = not periodic
 	MiscValue            int32     // for SpellEffectApplyAura (e.g., UnitStateStunned=4)
 	Radius               float64   // AoE selection radius in yards (0 = not AoE)
+	BreakOnDamage        bool      // for toggle auras: remove when caster takes damage
 }
 
 // TargetReference describes how to select targets for an effect.
@@ -124,6 +125,13 @@ type SpellInfo struct {
 	ChargeRecoveryTime     int32  // ms to recover one charge
 	RecoveryCategory       int32  // cooldown category for shared CD
 	Reflectable            bool   // can be reflected
+
+	// Toggle spell
+	IsToggle    bool   // true = toggle on/off spell (e.g. Stealth, Warrior Stance)
+	ToggleGroup string // mutual exclusion group name (empty = independent toggle)
+
+	// Skill availability
+	RequiresAura uint32 // spell is only available when caster has this aura active (0 = always available)
 }
 
 // PreventionType indicates what kind of interrupts can block this spell.

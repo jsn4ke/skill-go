@@ -43,6 +43,10 @@ type Aura struct {
 	RemainingProcs int32
 	Effects        []*AuraEffect
 	Applications   []*AuraApplication
+
+	// Toggle fields
+	ToggleGroup   string // mutual exclusion group (empty = independent toggle)
+	BreakOnDamage bool   // auto-remove when caster takes damage (e.g. Stealth)
 }
 
 // AuraEffect is the middle layer — describes a single effect within an aura.

@@ -61,6 +61,9 @@ type Unit struct {
 
 	// Movement speed modifier (multiplicative). 1.0 = normal, 0.5 = 50% slow.
 	SpeedMod float64
+
+	// OnDamageTaken is called after this unit takes damage. Set by the game loop.
+	OnDamageTaken func(u *Unit, amount int32)
 }
 
 // Position is a simple 3D coordinate.
@@ -102,6 +105,9 @@ func (u *Unit) TakeDamage(amount int32) {
 	if u.Health <= 0 {
 		u.Health = 0
 		u.Alive = false
+	}
+	if u.OnDamageTaken != nil {
+		u.OnDamageTaken(u, amount)
 	}
 }
 

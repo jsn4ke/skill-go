@@ -82,6 +82,9 @@ type SpellJSON struct {
 	ChannelDuration int32              `json:"channelDuration"`
 	TickInterval    int32              `json:"tickInterval"`
 	MissileSpeed    float64            `json:"missileSpeed"`
+	IsToggle        bool               `json:"isToggle"`
+	ToggleGroup     string             `json:"toggleGroup"`
+	RequiresAura    uint32             `json:"requiresAura"`
 	Effects         []string           `json:"effects"`
 	EffectsDetail   []EffectDetailJSON `json:"effectsDetail"`
 }
@@ -113,6 +116,8 @@ type TraceEventJSON struct {
 // CastResponse is the JSON response for POST /api/cast.
 type CastResponse struct {
 	Result          string           `json:"result"`
+	SpellID         uint32           `json:"spellID,omitempty"`
+	SpellName       string           `json:"spellName,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	Units           []UnitJSON       `json:"units"`
 	Events          []TraceEventJSON `json:"events"`
@@ -221,6 +226,7 @@ func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 		CD: s.RecoveryTime, PowerCost: s.PowerCost,
 		MaxTargets: s.MaxTargets, CategoryCD: s.CategoryRecoveryTime,
 		IsChanneled: s.IsChanneled, ChannelDuration: s.ChannelDuration, TickInterval: s.TickInterval, MissileSpeed: s.MissileSpeed,
+		IsToggle: s.IsToggle, ToggleGroup: s.ToggleGroup, RequiresAura: s.RequiresAura,
 		Effects: effectNames, EffectsDetail: effectDetails,
 	}
 }

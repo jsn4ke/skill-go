@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>skill-go 3D Battle Demo</title>
-  <link rel="stylesheet" href="/style.css?v=10">
+  <link rel="stylesheet" href="/style.css?v=13">
   <script type="importmap">
   {
     "imports": {
@@ -53,9 +53,12 @@
         </div>
         <div id="self-stats" class="panel-stats">
           <span>SP: <span id="self-sp">500</span></span>
-          <span>Crit: <span id="self-crit">20%</span></span>
-          <span>Hit: <span id="self-hit">100%</span></span>
+          <span>AP: <span id="self-ap">0</span></span>
+          <span>Armor: <span id="self-armor">0</span></span>
+          <span>Crit: <span id="self-crit">0/20%</span></span>
+          <span>Hit: <span id="self-hit">0/100%</span></span>
         </div>
+        <div id="self-auras" class="panel-auras"></div>
       </div>
     </div>
 
@@ -151,6 +154,11 @@
     </div>
 
     <!-- Action bar (bottom-center) -->
+    <!-- Stance skill bar (above action bar, shows stance-specific skills) -->
+    <div id="stance-bar" class="hidden">
+      <div id="stance-bar-label"></div>
+      <div id="stance-skills"></div>
+    </div>
     <div id="action-bar">
       <div id="spell-buttons"></div>
       <div id="action-buttons">
@@ -170,6 +178,6 @@
     </div>
   </div>
 
-  <script type="module" src="/app.js?v=15"></script>
+  <script type="module" src="/app.js?v=18"></script>
 </body>
 </html>
