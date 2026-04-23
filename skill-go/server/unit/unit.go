@@ -28,9 +28,9 @@ type Unit struct {
 	Position         Position
 
 	// State management
-	UnitStates  spelldef.UnitState // bitfield of control effects
-	CurrentForm uint32             // current shapeshift form (0 = none)
-	MountID     uint32             // current mount/vehicle (0 = none)
+	UnitStates  spelldef.UnitState     // bitfield of control effects
+	CurrentForm spelldef.ShapeshiftForm // current shapeshift form (0 = none)
+	MountID     uint32                 // current mount/vehicle (0 = none)
 
 	// Identity
 	Level  uint8

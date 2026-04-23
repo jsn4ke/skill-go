@@ -231,9 +231,10 @@ func (gl *GameLoop) breakOnDamageCallback(damaged *unit.Unit, amount int32) {
 		return
 	}
 	for _, a := range mgr.Auras {
-		if a.BreakOnDamage {
+		if a.Form == spelldef.FormStealth {
 			t := gl.newCastTrace()
 			mgr.RemoveAura(a, aura.RemoveModeCancelled, t, a.SpellID, a.SourceName)
+			damaged.CurrentForm = spelldef.FormNone
 			t.Event(trace.SpanSpell, "toggle.broken", a.SpellID, a.SourceName, map[string]interface{}{
 				"target": damaged.Name,
 				"damage": amount,
@@ -421,9 +422,9 @@ func (gl *GameLoop) handleCast(cmd Command) {
 	// Create trace early (needed for toggle spells and AoE targeting resolution)
 	castTrace := gl.newCastTrace()
 
-	// Handle toggle spells separately from normal cast flow
-	if spellInfo.IsToggle {
-		gl.handleToggleCast(cmd, spellInfo, caster, castTrace)
+	// Handle shapeshift/form spells
+	if spellInfo.ShapeshiftForm > 0 {
+		gl.handleShapeshiftCast(cmd, spellInfo, caster, castTrace)
 		return
 	}
 
@@ -550,8 +551,8 @@ func (gl *GameLoop) handleCast(cmd Command) {
 	}})
 }
 
-// handleToggleCast processes toggle spells: on/off switching + ToggleGroup mutual exclusion.
-func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo, caster *unit.Unit, tr *trace.Trace) {
+// handleShapeshiftCast processes toggle spells: on/off switching + ToggleGroup mutual exclusion.
+func (gl *GameLoop) handleShapeshiftCast(cmd Command, spellInfo *spelldef.SpellInfo, caster *unit.Unit, tr *trace.Trace) {
 	spellID := spellInfo.ID
 	spellName := spellInfo.Name
 	mgr := gl.auraProvider.GetAuraManager(caster)
@@ -565,6 +566,7 @@ func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo,
 	if existing != nil {
 		// Toggle OFF: remove the aura
 		mgr.RemoveAura(existing, aura.RemoveModeCancelled, tr, spellID, spellName)
+		caster.CurrentForm = spelldef.FormNone
 		tr.Event(trace.SpanSpell, "toggle.deactivated", spellID, spellName, map[string]interface{}{
 			"target": caster.Name,
 		})
@@ -578,9 +580,9 @@ func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo,
 	}
 
 	// ToggleGroup mutual exclusion: remove same-group toggle if present
-	if spellInfo.ToggleGroup != "" {
+	if spellInfo.ShapeshiftForm > 0 {
 		for _, a := range mgr.Auras {
-			if a.ToggleGroup == spellInfo.ToggleGroup && a.SpellID != spellID {
+			if a.Form > 0 && a.SpellID != spellID {
 				mgr.RemoveAura(a, aura.RemoveModeCancelled, tr, a.SpellID, a.SourceName)
 				tr.Event(trace.SpanSpell, "toggle.deactivated", a.SpellID, a.SourceName, map[string]interface{}{
 					"target": caster.Name,
@@ -601,7 +603,7 @@ func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo,
 				AuraType:    aura.AuraType(eff.AuraType),
 				Duration:    0, // toggle auras are permanent (0 = infinite)
 				StackAmount: 1,
-				ToggleGroup: spellInfo.ToggleGroup,
+				Form: spellInfo.ShapeshiftForm,
 				BreakOnDamage: eff.BreakOnDamage,
 				Effects: []*aura.AuraEffect{
 					{AuraType: aura.AuraType(eff.AuraType), BaseAmount: eff.BasePoints, MiscValue: eff.MiscValue, PeriodicTimer: eff.PeriodicTickInterval},
@@ -614,6 +616,7 @@ func (gl *GameLoop) handleToggleCast(cmd Command, spellInfo *spelldef.SpellInfo,
 	tr.Event(trace.SpanSpell, "toggle.activated", spellID, spellName, map[string]interface{}{
 		"target": caster.Name,
 	})
+	caster.CurrentForm = spellInfo.ShapeshiftForm
 	events := gl.collectAndResetEvents()
 	resp := gl.buildCastResponse(spelldef.CastResultSuccess, nil, events)
 	resp.Result = "toggle_on"

@@ -65,6 +65,7 @@ type UnitJSON struct {
 	Auras       []AuraJSON         `json:"auras"`
 	Position    unit.Position      `json:"position"`
 	SpeedMod    float64            `json:"speedMod"`
+	Form        int                `json:"form"`
 }
 
 // SpellJSON represents a spell definition for the API.
@@ -82,9 +83,8 @@ type SpellJSON struct {
 	ChannelDuration int32              `json:"channelDuration"`
 	TickInterval    int32              `json:"tickInterval"`
 	MissileSpeed    float64            `json:"missileSpeed"`
-	IsToggle        bool               `json:"isToggle"`
-	ToggleGroup     string             `json:"toggleGroup"`
-	RequiresAura    uint32             `json:"requiresAura"`
+	ShapeshiftForm  int                `json:"shapeshiftForm"`
+	Stances         uint32             `json:"stances"`
 	Effects         []string           `json:"effects"`
 	EffectsDetail   []EffectDetailJSON `json:"effectsDetail"`
 }
@@ -200,6 +200,7 @@ func unitToJSON(u *unit.Unit, auraMgr *aura.AuraManager) UnitJSON {
 		Dodge: u.Dodge, Parry: u.Parry, Block: u.Block, BlockValue: u.BlockValue,
 		MinWeapon: u.MinWeaponDamage, MaxWeapon: u.MaxWeaponDamage,
 		Auras: auraList, Position: u.Position, SpeedMod: u.SpeedMod,
+		Form: int(u.CurrentForm),
 	}
 }
 
@@ -226,7 +227,7 @@ func spellToJSON(s *spelldef.SpellInfo) SpellJSON {
 		CD: s.RecoveryTime, PowerCost: s.PowerCost,
 		MaxTargets: s.MaxTargets, CategoryCD: s.CategoryRecoveryTime,
 		IsChanneled: s.IsChanneled, ChannelDuration: s.ChannelDuration, TickInterval: s.TickInterval, MissileSpeed: s.MissileSpeed,
-		IsToggle: s.IsToggle, ToggleGroup: s.ToggleGroup, RequiresAura: s.RequiresAura,
+		ShapeshiftForm: int(s.ShapeshiftForm), Stances: s.Stances,
 		Effects: effectNames, EffectsDetail: effectDetails,
 	}
 }
@@ -294,6 +295,8 @@ func castErrorName(e spelldef.CastError) string {
 		spelldef.CastErrNoCharges:    "no_charges",
 		spelldef.CastErrOnGCD:        "on_gcd",
 		spelldef.CastErrInterrupted:  "interrupted",
+		spelldef.CastErrNoRage:      "no_rage",
+		spelldef.CastErrWrongForm:   "wrong_form",
 	}
 	if n, ok := names[e]; ok {
 		return n

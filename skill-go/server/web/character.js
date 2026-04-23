@@ -173,11 +173,17 @@ export function updateCharacter(group, unitData) {
     stunEl.style.display = hasDebuff ? 'block' : 'none';
   }
 
-  // Stealth indicator — show "潜行" text above head
+  // Form indicator — show form name label above head
   const stealthEl = d.stealthLabel?.element;
   if (stealthEl) {
-    const hasStealth = unitData.auras?.some(a => a.spellID === 1784) || false;
-    stealthEl.style.display = hasStealth ? 'block' : 'none';
+    const formNames = { 1: '潜行', 17: '战斗姿态', 18: '防御姿态', 19: '狂暴姿态' };
+    const formName = formNames[unitData.form];
+    if (formName) {
+      stealthEl.textContent = formName;
+      stealthEl.style.display = 'block';
+    } else {
+      stealthEl.style.display = 'none';
+    }
   }
 
   // Speed modifier — track and apply visual slow effect
@@ -194,9 +200,9 @@ export function updateCharacter(group, unitData) {
     d.headMat.color.copy(roleColor).lerp(slowColor, 0.5);
   }
 
-  // Stealth visual — make character semi-transparent when Stealth (1784) aura is active
-  const hasStealth = unitData.auras?.some(a => a.spellID === 1784) || false;
-  if (hasStealth) {
+  // Stealth visual — make character semi-transparent when form === 1 (FormStealth)
+  const isStealthed = (unitData.form === 1);
+  if (isStealthed) {
     d.bodyMat.transparent = true;
     d.bodyMat.opacity = 0.3;
     d.headMat.transparent = true;

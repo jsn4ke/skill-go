@@ -440,11 +440,11 @@ async function castSpell(spellID, targetGUID) {
       if (btn) {
         if (result.result === 'toggle_on') {
           btn.classList.add('toggle-active');
-          // For same ToggleGroup, deactivate other buttons
+          // For shapeshift form spells, deactivate other form buttons
           const spell = spellMap[spellID];
-          if (spell && spell.toggleGroup) {
+          if (spell && spell.shapeshiftForm > 0) {
             for (const s of Object.values(spellMap)) {
-              if (s.toggleGroup === spell.toggleGroup && s.id !== spellID) {
+              if (s.shapeshiftForm > 0 && s.id !== spellID) {
                 const otherBtn = document.getElementById('spell-btn-' + s.id);
                 if (otherBtn) otherBtn.classList.remove('toggle-active');
               }
@@ -614,16 +614,17 @@ function exitChannelingState() {
   removeBlizzardArea();
 }
 
-// syncToggleButtons restores toggle-active state from unit auras (called on init/reconcile).
+// syncToggleButtons restores toggle-active state from unit form (called on init/reconcile).
 function syncToggleButtons(units) {
   const caster = units.find(u => u.guid == activeCasterGUID);
   if (!caster) return;
-  const activeSpellIDs = new Set((caster.auras || []).map(a => a.spellID));
+  const casterForm = caster.form || 0;
   for (const s of Object.values(spellMap)) {
     const btn = document.getElementById('spell-btn-' + s.id);
     if (!btn) continue;
-    if (s.isToggle) {
-      if (activeSpellIDs.has(s.id)) btn.classList.add('toggle-active');
+    if (s.shapeshiftForm > 0) {
+      // Highlight if this form spell matches the caster's current form
+      if (s.shapeshiftForm === casterForm) btn.classList.add('toggle-active');
       else btn.classList.remove('toggle-active');
     }
   }
@@ -638,11 +639,11 @@ function updateToggleButtons(event) {
   if (!btn) return;
   if (event.event === 'toggle.activated') {
     btn.classList.add('toggle-active');
-    // For same ToggleGroup spells, remove toggle-active from others
+    // For shapeshift form spells, deactivate other form buttons (mutual exclusion)
     const spell = spellMap[spellID];
-    if (spell && spell.toggleGroup) {
+    if (spell && spell.shapeshiftForm > 0) {
       for (const s of Object.values(spellMap)) {
-        if (s.toggleGroup === spell.toggleGroup && s.id !== spellID) {
+        if (s.shapeshiftForm > 0 && s.id !== spellID) {
           const otherBtn = document.getElementById('spell-btn-' + s.id);
           if (otherBtn) otherBtn.classList.remove('toggle-active');
         }
@@ -1040,8 +1041,8 @@ function renderActionBar(spells) {
         if (sp.id === castingSpellID) cancelCast();
         return;
       }
-      // Toggle spells cast directly without needing a target
-      if (sp.isToggle) {
+      // Shapeshift/form spells cast directly without needing a target
+      if (sp.shapeshiftForm > 0) {
         castSpell(sp.id, null);
         return;
       }
@@ -1060,30 +1061,39 @@ function renderActionBar(spells) {
 }
 
 // ---- Stance Skill Bar ----
-// updateStanceBar shows skills that require the current active toggle aura.
+// updateStanceBar shows skills that require the current active shapeshift form (stances bitmask).
 function updateStanceBar() {
   const bar = document.getElementById('stance-bar');
   const label = document.getElementById('stance-bar-label');
   const skills = document.getElementById('stance-skills');
   if (!bar || !skills) return;
 
-  // Find caster's active aura spell IDs
+  // Find caster's current form
   const casterGroup = characters.find(c => c.userData.guid == activeCasterGUID);
   const casterData = casterGroup?.userData?.unitData;
-  const activeAuraIDs = new Set((casterData?.auras || []).map(a => a.spellID));
+  const casterForm = casterData?.form || 0;
 
-  // Collect all spells that require an aura AND that aura is active
+  // Compute the stance bit for the caster's current form
+  const formBit = casterForm > 0 ? (1 << (casterForm - 1)) : 0;
+
+  // Collect all spells whose Stances bitmask matches the caster's form
   const stanceSkills = [];
   let currentStanceName = '';
   for (const sp of spells) {
-    if (sp.requiresAura > 0) {
-      if (activeAuraIDs.has(sp.requiresAura)) {
+    if (sp.stances > 0) {
+      // Check if this spell's required stances include the caster's current form
+      if ((sp.stances & formBit) !== 0) {
         stanceSkills.push(sp);
       }
-      // Find the name of the active stance
-      if (activeAuraIDs.has(sp.requiresAura) && !currentStanceName) {
-        const stanceSpell = spellMap[sp.requiresAura];
-        if (stanceSpell) currentStanceName = stanceSpell.name;
+    }
+  }
+
+  // Find the name of the active stance from form value
+  if (casterForm > 0) {
+    for (const sp of spells) {
+      if (sp.shapeshiftForm === casterForm) {
+        currentStanceName = sp.name;
+        break;
       }
     }
   }
@@ -1115,7 +1125,7 @@ function updateStanceBar() {
 
     btn.addEventListener('click', () => {
       if (castingState === 'casting') return;
-      if (sp.isToggle) { castSpell(sp.id, null); return; }
+      if (sp.shapeshiftForm > 0) { castSpell(sp.id, null); return; }
       const isAoE = (sp.effectsDetail || []).some(e => e.radius > 0);
       if (isAoE) { enterTargetingMode(sp.id, 'ground'); }
       else if (selectedTargetGUID) { castSpell(sp.id, selectedTargetGUID); }

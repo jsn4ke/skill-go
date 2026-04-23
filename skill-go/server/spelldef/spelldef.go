@@ -1,5 +1,26 @@
 package spelldef
 
+// ShapeshiftForm enumerates stance/stealth/shapeshift forms.
+// Values align with WoW's ShapeshiftForm enum for future compatibility.
+type ShapeshiftForm int
+
+const (
+	FormNone            ShapeshiftForm = 0
+	FormStealth         ShapeshiftForm = 1
+	FormBattleStance    ShapeshiftForm = 17
+	FormDefensiveStance ShapeshiftForm = 18
+	FormBerserkerStance ShapeshiftForm = 19
+)
+
+// StancesBit returns the bit mask for a given form: 1 << (form - 1).
+// Returns 0 for FormNone.
+func StancesBit(form ShapeshiftForm) uint32 {
+	if form <= 0 {
+		return 0
+	}
+	return 1 << (uint32(form) - 1)
+}
+
 // SchoolMask represents a bitfield of magic schools.
 type SchoolMask uint32
 
@@ -126,12 +147,9 @@ type SpellInfo struct {
 	RecoveryCategory       int32  // cooldown category for shared CD
 	Reflectable            bool   // can be reflected
 
-	// Toggle spell
-	IsToggle    bool   // true = toggle on/off spell (e.g. Stealth, Warrior Stance)
-	ToggleGroup string // mutual exclusion group name (empty = independent toggle)
-
-	// Skill availability
-	RequiresAura uint32 // spell is only available when caster has this aura active (0 = always available)
+	// Shapeshift / stance fields
+	ShapeshiftForm ShapeshiftForm // > 0 = this spell switches to this form; 0 = normal spell
+	Stances        uint32         // bitfield of required forms (0 = no restriction)
 }
 
 // PreventionType indicates what kind of interrupts can block this spell.
@@ -173,6 +191,7 @@ const (
 	CastErrOnGCD        CastError = 14
 	CastErrInterrupted  CastError = 15
 	CastErrNoRage       CastError = 16
+	CastErrWrongForm    CastError = 17 // not in required shapeshift form
 )
 
 // CombatResult represents the outcome of a hit resolution roll.

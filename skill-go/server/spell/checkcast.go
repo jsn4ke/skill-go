@@ -112,14 +112,14 @@ func checkDisarm(info *spelldef.SpellInfo, caster *unit.Unit, t *trace.Trace) sp
 }
 
 func checkShapeshift(info *spelldef.SpellInfo, caster *unit.Unit, t *trace.Trace) spelldef.CastError {
-	if info.RequiresShapeshiftMask == 0 {
+	if info.Stances == 0 {
 		return spelldef.CastErrNone
 	}
-	if caster.CurrentForm == 0 || (caster.CurrentForm&info.RequiresShapeshiftMask) == 0 {
+	if spelldef.StancesBit(caster.CurrentForm) & info.Stances == 0 {
 		t.Event(trace.SpanCheckCast, "failed", info.ID, info.Name, map[string]interface{}{
 			"reason":   "wrong_shapeshift",
-			"form":     caster.CurrentForm,
-			"required": info.RequiresShapeshiftMask,
+			"form":     int(caster.CurrentForm),
+			"required": info.Stances,
 		})
 		return spelldef.CastErrShapeshifted
 	}

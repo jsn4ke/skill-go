@@ -242,9 +242,9 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "wrong shapeshift form fails",
 			info: &spelldef.SpellInfo{
-				ID:                     17,
-				Name:                   "BearFormSpell",
-				RequiresShapeshiftMask: 1, // form 1 required
+				ID:      17,
+				Name:    "BearFormSpell",
+				Stances: spelldef.StancesBit(1), // form 1 required (bit 0 = 1)
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
 				caster.CurrentForm = 2 // wrong form
@@ -254,9 +254,9 @@ func TestCheckCast(t *testing.T) {
 		{
 			name: "correct shapeshift form passes",
 			info: &spelldef.SpellInfo{
-				ID:                     18,
-				Name:                   "BearFormSpell",
-				RequiresShapeshiftMask: 1,
+				ID:      18,
+				Name:    "BearFormSpell",
+				Stances: spelldef.StancesBit(1), // form 1 required
 			},
 			setup: func(caster *unit.Unit, targets []*unit.Unit) {
 				caster.CurrentForm = 1

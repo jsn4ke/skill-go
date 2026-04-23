@@ -60,7 +60,7 @@ func LoadSpells(dataDir string) ([]SpellInfo, error) {
 
 	// Pad rows to 16 columns so optional fields are always at fixed indices
 	for i := range spellRows {
-		for len(spellRows[i]) < 16 {
+		for len(spellRows[i]) < 15 {
 			spellRows[i] = append(spellRows[i], "")
 		}
 	}
@@ -195,26 +195,25 @@ func parseSpellRow(row []string, si *SpellInfo) error {
 		return err
 	}
 
-	// Toggle fields (cols 13-14)
-	if v := strings.TrimSpace(row[13]); v != "" {
-		it, perr := strconv.ParseInt(v, 10, 32)
-		if perr != nil {
-			return fmt.Errorf("parse isToggle: %w", perr)
+	// ShapeshiftForm field (col 13)
+	if len(row) > 13 {
+		if v := strings.TrimSpace(row[13]); v != "" {
+			formVal, ferr := strconv.ParseInt(v, 10, 32)
+			if ferr != nil {
+				return fmt.Errorf("parse shapeshiftForm: %w", ferr)
+			}
+			si.ShapeshiftForm = ShapeshiftForm(formVal)
 		}
-		si.IsToggle = it != 0
-	}
-	if len(row) > 14 {
-		si.ToggleGroup = strings.TrimSpace(row[14])
 	}
 
-	// RequiresAura field (col 15)
-	if len(row) > 15 {
-		if v := strings.TrimSpace(row[15]); v != "" {
-			auraID, aerr := strconv.ParseUint(v, 10, 32)
-			if aerr != nil {
-				return fmt.Errorf("parse requiresAura: %w", aerr)
+	// Stances field (col 14) - hex string like "0x10000"
+	if len(row) > 14 {
+		if v := strings.TrimSpace(row[14]); v != "" {
+			stVal, serr := strconv.ParseUint(v, 0, 32)
+			if serr != nil {
+				return fmt.Errorf("parse stances: %w", serr)
 			}
-			si.RequiresAura = uint32(auraID)
+			si.Stances = uint32(stVal)
 		}
 	}
 

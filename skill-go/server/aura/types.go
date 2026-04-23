@@ -1,6 +1,7 @@
 package aura
 
 import (
+	"skill-go/server/spelldef"
 	"skill-go/server/unit"
 )
 
@@ -45,8 +46,8 @@ type Aura struct {
 	Applications   []*AuraApplication
 
 	// Toggle fields
-	ToggleGroup   string // mutual exclusion group (empty = independent toggle)
-	BreakOnDamage bool   // auto-remove when caster takes damage (e.g. Stealth)
+	Form          spelldef.ShapeshiftForm // shapeshift form this aura represents (0 = not a form aura)
+	BreakOnDamage bool                    // auto-remove when caster takes damage (e.g. Stealth)
 }
 
 // AuraEffect is the middle layer — describes a single effect within an aura.
